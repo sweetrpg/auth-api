@@ -1,0 +1,15 @@
+name: Prepare Release
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    uses: sweetrpg/github-actions/.github/workflows/swift-prepare-release.yaml@master
+    with:
+      project-number: 15
+    secrets: inherit
