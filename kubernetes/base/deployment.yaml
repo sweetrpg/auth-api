@@ -1,0 +1,71 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+    name: api-v1
+
+spec:
+    strategy:
+        rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 1
+        type: RollingUpdate
+    selector:
+        matchLabels:
+            app: api
+            version: v1
+            platform: sweetrpg
+            package: auth
+            component: api
+    template:
+        metadata:
+            labels:
+                platform: sweetrpg
+                app: api
+                package: auth
+                component: api
+                version: v1
+        spec:
+            serviceAccountName: api
+            enableServiceLinks: false
+            imagePullSecrets:
+                - name: sweetrpg-registry
+            containers:
+                - name: app
+                  image: auth-api
+                  imagePullPolicy: Always
+                  envFrom:
+                      - configMapRef:
+                            name: api-common
+                      - configMapRef:
+                            name: api-env
+                      - secretRef:
+                            name: api-db
+                      - secretRef:
+                            name: api-misc
+                  ports:
+                      - containerPort: 8080
+                        name: http
+                  resources:
+                      requests:
+                          cpu: "20m"
+                          memory: "55Mi"
+                      limits:
+                          cpu: "1.0"
+                          memory: "512Mi"
+                  livenessProbe:
+                        httpGet:
+                            path: /status/ping
+                            port: http
+                        initialDelaySeconds: 30
+                        timeoutSeconds: 10
+                        periodSeconds: 10
+                  readinessProbe:
+                        httpGet:
+                            path: /status/ping
+                            port: http
+                        initialDelaySeconds: 10
+                        timeoutSeconds: 10
+                        periodSeconds: 10
+            restartPolicy: Always

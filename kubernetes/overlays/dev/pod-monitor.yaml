@@ -1,0 +1,21 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+
+metadata:
+  name: sweetrpg-auth-api
+  labels:
+    release: prometheus
+
+spec:
+  podMetricsEndpoints:
+    - port: http
+  selector:
+    matchLabels:
+        platform: sweetrpg
+        app: api
+        package: auth
+        component: api
+  namespaceSelector:
+    matchNames:
+      - sweetrpg-auth

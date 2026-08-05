@@ -1,0 +1,49 @@
+---
+# auth-api's own database user, scoped to only its own database - the shared "sweetrpg" user
+# (readWriteAnyDatabase) is not for service use. Same pattern as users-api's own
+# kubernetes/overlays/dev/atlas-db-user.yaml.
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasDatabaseUser
+
+metadata:
+  name: auth-api
+
+spec:
+  databaseName: sweetrpg-auth
+  username: auth-api
+  passwordSecretRef:
+    name: auth-api-db-credentials
+  projectRef:
+    name: sweetrpg
+    namespace: sweetrpg-db
+  roles:
+    - databaseName: sweetrpg-auth
+      roleName: readWrite
+  x509Type: NONE
+
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+
+metadata:
+  name: auth-api-db-credentials
+
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: akeyless
+    kind: ClusterSecretStore
+  target:
+    name: auth-api-db-credentials
+    template:
+      metadata:
+        labels:
+          atlas.mongodb.com/type: credentials
+    creationPolicy: Owner
+  dataFrom:
+    # Same Akeyless value this overlay's own secrets.yaml reads into DATABASE_URL - one
+    # password, read by two ExternalSecrets, so the Operator-provisioned Atlas user and the
+    # app's own connection always agree on it. Provisioning: needs a key literally named
+    # "password" at this path (not provisioned by this manifest).
+    - extract:
+        key: /sweetrpg/auth/api/atlas-db-password

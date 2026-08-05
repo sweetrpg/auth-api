@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: api-env
+
+data:
+  ENV: dev
+  # mongodb.go builds the connection string from these DB_* parts rather than one opaque
+  # DB_URI - only the password (DB_PW, in secrets.yaml) is sensitive. DB_HOST is Atlas's own
+  # SRV hostname for Cluster0 - not secret, but not derivable from anything else in this repo.
+  DB_SCHEME: mongodb+srv
+  DB_HOST: cluster0.z9nxg.mongodb.net
+  DB_USER: auth-api
+  DB_NAME: sweetrpg-auth
+  DB_OPTS: retryWrites=true&w=majority
+  PORT: "8080"
+  BUILD_INFO_PATH: /app/config/build-info.json
+  LOG_LEVEL: info

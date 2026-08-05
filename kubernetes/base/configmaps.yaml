@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: api-common
+
+data:
+  LOG_LEVEL: info

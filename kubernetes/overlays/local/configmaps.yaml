@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: api-env
+
+data:
+  ENV: local
+  PORT: "8080"
+  BUILD_INFO_PATH: /app/config/build-info.json
+  LOG_LEVEL: info
