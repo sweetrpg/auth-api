@@ -5,10 +5,19 @@ working in this repository.
 
 ## About This Project
 
-`auth-api` (Swift/Vapor) is the platform's dedicated authentication/authorization service. Split
-out of `users-api` (see `sweetrpg/platform`'s `split-authz-into-auth-api` OpenSpec change) so
-that authz is owned by a service with no other responsibilities, paired with `auth-model` for its
-data layer and deployed alongside `auth-web` in the `sweetrpg-auth` namespace.
+`auth-api` (Go) is the platform's dedicated authentication/authorization service. Split out of
+`users-api` (see `sweetrpg/platform`'s `split-authz-into-auth-api` OpenSpec change) so that authz
+is owned by a service with no other responsibilities, and deployed alongside `auth-web` in the
+`sweetrpg-auth` namespace. Rewritten from Swift/Vapor to Go - see `sweetrpg/platform`'s
+`migrate-auth-users-api-to-go` OpenSpec change for the rationale (closing an observability gap:
+no tracing, no structured logging) and migration strategy (replaced the Swift deployment in place
+- no parallel `api-v0`/`api-v1` deploy; the platform is pre-MVP with no versioned-API contract to
+protect yet, see design.md's "Cutover strategy" decision). It reads/writes the same MongoDB
+collections (`user_roles`, `service_deny_entries`, `admin_action_audit_logs`) the Swift service
+produced; no data migration was needed. This repo's `auth-model` Swift package dependency was
+dropped - the equivalent Go types (`Role`, `UserRole`, `ServiceDenyEntry`) live in this repo's own
+`models/` package rather than a shared foundational library (see design.md's "No shared Go JWKS
+foundational library" decision for the same reasoning applied to the JWKS verification code).
 
 It verifies Auth0-issued access tokens server-side (JWKS signature verification, not a local
 unverified decode) and exposes `POST /authz/check` for any other service to call with a bearer
@@ -61,16 +70,26 @@ with 400 before touching the database if it's missing or empty, since the audit 
 know who to attribute the action to. Auth0 bearer-token callers don't need this header; their
 own verified token's subject is used instead.
 
+## Language and Framework
+
+Go, following `sweetrpg/platform`'s `docs/service-conventions.md` baseline: Gin, `api-core.go`
+(tracing setup, `/status/health`/`/status/ping`), `mongodb.go` (generic Mongo CRUD, connection
+lifecycle), `common.go` (structured application logging), `slog-gin` (JSON HTTP access logs).
+Handlers live in `server/` (one file per resource), models in `models/`, Auth0 JWKS verification
+in `auth0/`, env-var/collection-name constants in `constants/`, the entrypoint in
+`cmd/auth-api/main.go`. Swagger docs (`docs/`) are generated, not hand-written - see "Running
+Checks Locally".
+
 ## Deployment
 
 `kubernetes/` (base + `overlays/{dev,local}`) deploys this service into the `sweetrpg-auth`
 namespace, server-to-server only - no Ingress, since every caller (`auth-web`, `admin-web`)
-reaches it over in-cluster DNS (`auth-api.sweetrpg-auth.svc.cluster.local:8080`). `DATABASE_URL`
-(MongoDB, its own `sweetrpg_auth` database via a dedicated `AtlasDatabaseUser`),
-`AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (the one shared Auth0 application - see `auth-web`'s
-`AGENTS.md`), and `INTERNAL_SERVICE_TOKEN` all come from Akeyless via `ExternalSecret`s, not the
-configmap. This service holds no session store of its own - it's a stateless, bearer-token-only
-API.
+reaches it over in-cluster DNS (`auth-api.sweetrpg-auth.svc.cluster.local:8000`). `DB_URI` (or the
+`DB_SCHEME`/`DB_HOST`/`DB_USER`/`DB_PW`/`DB_NAME`/`DB_OPTS` parts, its own `sweetrpg-auth`
+database via a dedicated `AtlasDatabaseUser`), `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (the one shared
+Auth0 application - see `auth-web`'s `AGENTS.md`), and `INTERNAL_SERVICE_TOKEN` all come from
+Akeyless via `ExternalSecret`s, not the configmap. This service holds no session store of its own
+- it's a stateless, bearer-token-only API.
 
 ## Committing Code
 
@@ -84,9 +103,14 @@ Git-flow (see `docs/git-flow.md` in `sweetrpg/platform`): `develop` is the integ
 ## Running Checks Locally
 
 ```bash
-swift build
-swift test
-swift format lint --recursive --strict Sources Tests
+go build ./...
+go vet ./...
+go test ./...
 ```
 
-`swift run` serves on `:8080`.
+`go run cmd/auth-api/main.go` serves on `:8000` (`BIND_ADDRESS` to override). Regenerate Swagger
+docs after changing handler annotations:
+
+```bash
+go run github.com/swaggo/swag/cmd/swag@latest init -d cmd/auth-api/,server/,models/ --parseDependency --parseInternal
+```

@@ -15,6 +15,6 @@ data:
   DB_USER: auth-api
   DB_NAME: sweetrpg-auth
   DB_OPTS: retryWrites=true&w=majority
-  PORT: "8080"
+  PORT: "8000"
   BUILD_INFO_PATH: /app/config/build-info.json
   LOG_LEVEL: info

@@ -1,18 +1,23 @@
 # This is a multi-stage Dockerfile and requires >= Docker 17.05
 # https://docs.docker.com/engine/userguide/eng-image/multistage-build/
-FROM swift:6.3-jammy AS builder
+FROM golang:1.26.5 AS builder
 
-WORKDIR /build
+ENV GOPROXY=http://proxy.golang.org
 
-# Resolve dependencies before copying source, so source-only changes don't invalidate the
-# downloaded-dependencies layer.
-COPY Package.swift Package.resolved* ./
-RUN swift package resolve
+RUN mkdir -p /src/auth-api
+WORKDIR /src/auth-api
 
-COPY . .
-RUN swift build -c release --static-swift-stdlib
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+# cache deps before building and copying source so that we don't need to re-download as much
+# and so that source changes don't invalidate our downloaded layer
+RUN go mod download && go mod verify
 
-FROM swift:6.3-jammy-slim
+ADD . .
+RUN CGO_ENABLED=0 GOOS=linux go build -v -o /bin/server cmd/auth-api/main.go
+
+FROM alpine
 
 ARG USERNAME=sweetrpg
 ARG BUILD_NUMBER=unset
@@ -21,24 +26,30 @@ ARG BUILD_SHA=unset
 ARG BUILD_DATE=unset
 ARG BUILD_VERSION=unset
 
-RUN useradd --user-group --create-home --system --skel /dev/null $USERNAME
+RUN apk add --no-cache bash
+RUN apk add --no-cache ca-certificates
 
-WORKDIR /app
+RUN addgroup $USERNAME \
+    && adduser -D -G $USERNAME $USERNAME
+
+WORKDIR /app/
 
 RUN mkdir -p /app/bin /app/config
-# Package.swift's executable target is named "Run" (Sources/Run/main.swift), not "App" -
-# "App" is the library target (Sources/App).
-COPY --from=builder /build/.build/release/Run /app/bin/
+COPY --from=builder /bin/server /app/bin/
 
 RUN echo "{\"number\":\"${BUILD_NUMBER}\",\"job\":\"${BUILD_JOB}\",\"sha\":\"${BUILD_SHA}\",\"date\":\"${BUILD_DATE}\",\"version\":\"${BUILD_VERSION}\"}" > /app/config/build-info.json
 RUN chown -R ${USERNAME}:${USERNAME} /app
 
-ENV PORT="8080"
+ENV GO_ENV=production
+ENV BIND_ADDRESS=0.0.0.0:8000
+ENV PORT="8000"
+ENV MONGODB_URI=""
+ENV MONGODB_DATABASE="auth-api"
+ENV GIN_MODE="release"
 ENV VERSION=${BUILD_VERSION}
 
-EXPOSE 8080
+EXPOSE 8000
 
 USER ${USERNAME}
 
-ENTRYPOINT ["/app/bin/Run"]
-CMD ["serve"]
+CMD [ "/app/bin/server" ]
