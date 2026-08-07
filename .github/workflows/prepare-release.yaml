@@ -9,7 +9,7 @@ on:
 
 jobs:
   prepare:
-    uses: sweetrpg/github-actions/.github/workflows/swift-prepare-release.yaml@master
+    uses: sweetrpg/github-actions/.github/workflows/go-prepare-release.yaml@master
     with:
       project-number: 15
     secrets: inherit

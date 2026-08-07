@@ -11,5 +11,5 @@ permissions:
 
 jobs:
   tag-release:
-    uses: sweetrpg/github-actions/.github/workflows/swift-tag-release.yaml@master
+    uses: sweetrpg/github-actions/.github/workflows/go-tag-release.yaml@master
     secrets: inherit

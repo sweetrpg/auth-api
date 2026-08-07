@@ -1,0 +1,48 @@
+name: Docs
+
+concurrency: ci
+
+on:
+    push:
+        branches: [develop]
+        paths:
+            - "**/*.go"
+            - "!docs/**"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    tests:
+        name: ${{ matrix.name }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - {
+                          name: Linux,
+                          os: ubuntu-latest,
+                      }
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                fetch-depth: 0
+            - name: Set up Go
+              uses: actions/setup-go@v7
+              with:
+                go-version-file: go.mod
+            - name: Generate docs
+              env:
+                CHECKOUT_REF: ${{ github.head_ref || github.ref_name }}
+              run: |
+                    git config --global user.email "ci@sweetrpg.com"
+                    git config --global user.name "SweetRPG Depedency Updater"
+                    git checkout "$CHECKOUT_REF"
+
+                    go run github.com/swaggo/swag/cmd/swag@latest init -d cmd/auth-api/,server/,models/ --parseDependency --parseInternal
+
+                    git add docs/
+                    git commit -m "Generate docs" || exit 0
+                    git push origin

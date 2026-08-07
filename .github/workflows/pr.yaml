@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   validate:
-    uses: sweetrpg/github-actions/.github/workflows/swift-ci.yaml@master
+    uses: sweetrpg/github-actions/.github/workflows/go-ci.yaml@master
     with:
       publish-coverage: false
     secrets: inherit
