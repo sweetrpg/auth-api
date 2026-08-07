@@ -64,6 +64,13 @@ func checkAuthz(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 
 	claims, err := cache.Verify(c.Request.Context(), token, config)
 	if err != nil {
+		// Logged at Warn, not Error: an invalid/expired token is a routine client condition,
+		// not a service fault. Still logs the real reason (bad signature, expired, wrong
+		// issuer/audience, unresolvable kid) so it stays distinguishable from a downstream
+		// dependency failure below - the Swift service's equivalent check collapsed both into
+		// one generic "invalid_token" response with no logged cause, which cost real debugging
+		// time during a MongoDB decode failure that looked identical to an invalid token.
+		logging.Logger.Warn("Token verification failed", "error", err.Error())
 		invalidTokenResponse(c)
 		return
 	}
