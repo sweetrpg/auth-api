@@ -61,7 +61,7 @@ func (c *JWKSCache) fetch(ctx context.Context, config Config) (keyfunc.Keyfunc, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch Auth0 JWKS: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch Auth0 JWKS: status %d", resp.StatusCode)
 	}
