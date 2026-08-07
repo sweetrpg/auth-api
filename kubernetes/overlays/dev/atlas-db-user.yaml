@@ -41,9 +41,14 @@ spec:
           atlas.mongodb.com/type: credentials
     creationPolicy: Owner
   dataFrom:
-    # Same Akeyless value this overlay's own secrets.yaml reads into DATABASE_URL - one
-    # password, read by two ExternalSecrets, so the Operator-provisioned Atlas user and the
-    # app's own connection always agree on it. Provisioning: needs a key literally named
-    # "password" at this path (not provisioned by this manifest).
+    # Same Akeyless value this overlay's own secrets.yaml reads (rewritten to DB_PW there) -
+    # one password, read by two ExternalSecrets, so the Operator-provisioned Atlas user and the
+    # app's own connection always agree on it. Akeyless stores it under the field name
+    # DB_PASSWORD; the Atlas Operator requires the Secret key to be literally "password", hence
+    # the rewrite here.
     - extract:
-        key: /sweetrpg/auth/api/atlas-db-password
+        key: /sweetrpg/auth/api/db
+      rewrite:
+        - regexp:
+            source: "DB_PASSWORD"
+            target: "password"
