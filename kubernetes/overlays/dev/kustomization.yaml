@@ -5,10 +5,12 @@ namespace: sweetrpg-auth
 
 resources:
     - ../../base
-    - configmaps.yaml
-    - secrets.yaml
     - atlas-db-user.yaml
+    - configmaps.yaml
     - pod-monitor.yaml
+    - secrets/db-creds.yaml
+    - secrets/db.yaml
+    - secrets/misc.yaml
 
 labels:
     - pairs:
