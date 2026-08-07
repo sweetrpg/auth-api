@@ -1,3 +1,12 @@
+## [0.2.1] - 2026-08-07
+
+### 📚 Documentation
+
+- Document first-admin bootstrapping and correct Service hostname
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.2.0
 ## [0.2.0] - 2026-08-07
 
 ### 🚀 Features
