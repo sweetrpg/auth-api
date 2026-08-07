@@ -1,0 +1,2156 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>auth0: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/sweetrpg/auth-api/auth0/config.go (28.6%)</option>
+				
+				<option value="file1">github.com/sweetrpg/auth-api/auth0/jwks_cache.go (82.7%)</option>
+				
+				<option value="file2">github.com/sweetrpg/auth-api/cmd/auth-api/main.go (0.0%)</option>
+				
+				<option value="file3">github.com/sweetrpg/auth-api/docs/docs.go (0.0%)</option>
+				
+				<option value="file4">github.com/sweetrpg/auth-api/models/audit_log.go (0.0%)</option>
+				
+				<option value="file5">github.com/sweetrpg/auth-api/models/role.go (0.0%)</option>
+				
+				<option value="file6">github.com/sweetrpg/auth-api/models/service_deny_entry.go (0.0%)</option>
+				
+				<option value="file7">github.com/sweetrpg/auth-api/models/user_role.go (0.0%)</option>
+				
+				<option value="file8">github.com/sweetrpg/auth-api/server/authz.go (9.5%)</option>
+				
+				<option value="file9">github.com/sweetrpg/auth-api/server/handlers.go (0.0%)</option>
+				
+				<option value="file10">github.com/sweetrpg/auth-api/server/roles.go (18.3%)</option>
+				
+				<option value="file11">github.com/sweetrpg/auth-api/server/status.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">// Package auth0 verifies Auth0-issued access tokens against the tenant's
+// JWKS.
+package auth0
+
+import (
+        "errors"
+        "fmt"
+
+        "github.com/sweetrpg/auth-api/constants"
+        "github.com/sweetrpg/common.go/util"
+)
+
+// Config is the Auth0 tenant this service verifies bearer tokens against.
+type Config struct {
+        Domain   string
+        Audience string
+}
+
+// Issuer is the expected `iss` claim for a token from this tenant.
+func (c Config) Issuer() string <span class="cov10" title="16">{
+        return fmt.Sprintf("https://%s/", c.Domain)
+}</span>
+
+// JWKSURL is this tenant's published JWKS endpoint.
+func (c Config) JWKSURL() string <span class="cov7" title="8">{
+        return fmt.Sprintf("https://%s/.well-known/jwks.json", c.Domain)
+}</span>
+
+// ConfigFromEnvironment reads AUTH0_DOMAIN/AUTH0_AUDIENCE. Returns an error
+// rather than crashing the process - callers (main.go) are expected to
+// treat a missing config as a startup failure, not a mid-request one.
+func ConfigFromEnvironment() (Config, error) <span class="cov0" title="0">{
+        domain := util.GetEnv(constants.AUTH0_DOMAIN, "")
+        audience := util.GetEnv(constants.AUTH0_AUDIENCE, "")
+        if domain == "" || audience == "" </span><span class="cov0" title="0">{
+                return Config{}, errors.New("AUTH0_DOMAIN and AUTH0_AUDIENCE must be set in environment")
+        }</span>
+        <span class="cov0" title="0">return Config{Domain: domain, Audience: audience}, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package auth0
+
+import (
+        "context"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net/http"
+        "sync"
+        "time"
+
+        "github.com/MicahParks/keyfunc/v3"
+        "github.com/golang-jwt/jwt/v5"
+)
+
+// JWKSCache fetches and caches an Auth0 tenant's JWKS. A verification
+// attempt against a kid not in the cache triggers exactly one refetch
+// (Auth0 rotates signing keys occasionally; a cache built before a rotation
+// shouldn't reject a token signed with the new key) before failing as
+// invalid. Ports the Swift service's JWKSCache 1:1 - see jwks_cache_test.go
+// for the refetch-once behavior this guarantees.
+type JWKSCache struct {
+        httpClient *http.Client
+
+        // JWKSURLOverride, when set, is fetched instead of config.JWKSURL() - a
+        // seam for tests to point the cache at a local stub server rather than a
+        // real Auth0 tenant.
+        JWKSURLOverride string
+
+        mu sync.RWMutex
+        kf keyfunc.Keyfunc
+}
+
+// NewJWKSCache returns an empty cache; the first Verify call populates it.
+func NewJWKSCache() *JWKSCache <span class="cov8" title="7">{
+        return &amp;JWKSCache{httpClient: &amp;http.Client{Timeout: 10 * time.Second}}
+}</span>
+
+func (c *JWKSCache) cached() keyfunc.Keyfunc <span class="cov10" title="9">{
+        c.mu.RLock()
+        defer c.mu.RUnlock()
+        return c.kf
+}</span>
+
+func (c *JWKSCache) store(kf keyfunc.Keyfunc) <span class="cov9" title="8">{
+        c.mu.Lock()
+        defer c.mu.Unlock()
+        c.kf = kf
+}</span>
+
+func (c *JWKSCache) fetch(ctx context.Context, config Config) (keyfunc.Keyfunc, error) <span class="cov9" title="8">{
+        url := config.JWKSURL()
+        if c.JWKSURLOverride != "" </span><span class="cov9" title="8">{
+                url = c.JWKSURLOverride
+        }</span>
+        <span class="cov9" title="8">req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov9" title="8">resp, err := c.httpClient.Do(req)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to fetch Auth0 JWKS: %w", err)
+        }</span>
+        <span class="cov9" title="8">defer func() </span><span class="cov9" title="8">{ _ = resp.Body.Close() }</span>()
+        <span class="cov9" title="8">if resp.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to fetch Auth0 JWKS: status %d", resp.StatusCode)
+        }</span>
+        <span class="cov9" title="8">body, err := io.ReadAll(resp.Body)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to read Auth0 JWKS response: %w", err)
+        }</span>
+
+        <span class="cov9" title="8">kf, err := keyfunc.NewJWKSetJSON(json.RawMessage(body))
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to parse Auth0 JWKS: %w", err)
+        }</span>
+        <span class="cov9" title="8">c.store(kf)
+        return kf, nil</span>
+}
+
+// Verify verifies token against Auth0's JWKS. It checks the token's kid
+// against the current cache *before* parsing (matching the Swift service's
+// membership check, not a parse-then-retry loop): a kid already present
+// uses the cache with no HTTP call; a kid missing (or no cache fetched yet)
+// triggers exactly one fetch, after which the kid is either present or the
+// token is rejected - never a second fetch for the same Verify call, since
+// a kid genuinely absent from the tenant's JWKS won't appear on a retry.
+func (c *JWKSCache) Verify(ctx context.Context, token string, config Config) (*Claims, error) <span class="cov10" title="9">{
+        kid, err := extractKID(token)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov10" title="9">kf := c.cached()
+        if kf == nil || !c.hasKID(ctx, kf, kid) </span><span class="cov9" title="8">{
+                kf, err = c.fetch(ctx, config)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+        }
+
+        <span class="cov10" title="9">return c.parse(token, kf, config)</span>
+}
+
+func (c *JWKSCache) hasKID(ctx context.Context, kf keyfunc.Keyfunc, kid string) bool <span class="cov3" title="2">{
+        _, err := kf.Storage().KeyRead(ctx, kid)
+        return err == nil
+}</span>
+
+func extractKID(token string) (string, error) <span class="cov10" title="9">{
+        unverified := &amp;Claims{}
+        parsed, _, err := jwt.NewParser().ParseUnverified(token, unverified)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse token header: %w", err)
+        }</span>
+        <span class="cov10" title="9">kid, ok := parsed.Header["kid"].(string)
+        if !ok || kid == "" </span><span class="cov0" title="0">{
+                return "", jwt.ErrTokenMalformed
+        }</span>
+        <span class="cov10" title="9">return kid, nil</span>
+}
+
+func (c *JWKSCache) parse(token string, kf keyfunc.Keyfunc, config Config) (*Claims, error) <span class="cov10" title="9">{
+        claims := &amp;Claims{}
+        _, err := jwt.ParseWithClaims(token, claims, kf.Keyfunc,
+                jwt.WithValidMethods([]string{"RS256"}),
+                jwt.WithIssuer(config.Issuer()),
+                jwt.WithAudience(config.Audience),
+                jwt.WithExpirationRequired(),
+        )
+        if err != nil </span><span class="cov6" title="4">{
+                return nil, err
+        }</span>
+        <span class="cov7" title="5">return claims, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package main
+
+import (
+        "log"
+        "log/slog"
+        "os"
+        "strconv"
+        "strings"
+        "time"
+
+        "github.com/getsentry/sentry-go"
+        "github.com/gin-contrib/cors"
+        "github.com/gin-gonic/gin"
+        "github.com/grafana/pyroscope-go"
+        "github.com/joho/godotenv"
+        "github.com/penglongli/gin-metrics/ginmetrics"
+        sloggin "github.com/samber/slog-gin"
+        actuator "github.com/sinhashubham95/go-actuator"
+        swaggerfiles "github.com/swaggo/files"
+        ginSwagger "github.com/swaggo/gin-swagger"
+        apiconstants "github.com/sweetrpg/api-core.go/constants"
+        "github.com/sweetrpg/api-core.go/tracing"
+        "github.com/sweetrpg/api-core.go/vo"
+        "github.com/sweetrpg/auth-api/auth0"
+        "github.com/sweetrpg/auth-api/constants"
+        "github.com/sweetrpg/auth-api/docs"
+        "github.com/sweetrpg/auth-api/server"
+        "github.com/sweetrpg/common.go/logging"
+        "github.com/sweetrpg/common.go/util"
+        "github.com/sweetrpg/mongodb.go/database"
+        "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+        "golang.org/x/time/rate"
+)
+
+// @title Auth API service
+// @version 1.0
+// @description Swagger APIs
+// @termsOfService https://pilgrimagesoftware.com/terms/
+// @contact.name API Support
+// @contact.url https://sweetrpg.com
+// @contact.email admin@sweetrpg.com
+// @license.name MIT
+// @license.url https://mit-license.org/
+func main() <span class="cov0" title="0">{
+        _ = godotenv.Load(".env")
+
+        logging.Init()
+
+        setupSentry()
+
+        if stopProfiling := setupProfiling(); stopProfiling != nil </span><span class="cov0" title="0">{
+                defer stopProfiling()
+        }</span>
+
+        <span class="cov0" title="0">auth0Config, err := auth0.ConfigFromEnvironment()
+        if err != nil </span><span class="cov0" title="0">{
+                // Every route this service exposes depends on Auth0 verification either
+                // directly (/authz/check) or as its bearer-token fallback
+                // (/api/admin/*), so a missing config is a startup failure, not a
+                // degraded mode to run in.
+                log.Fatalf("auth-api cannot start: %v", err)
+        }</span>
+        <span class="cov0" title="0">jwksCache := auth0.NewJWKSCache()
+
+        httpLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+        r := gin.New()
+        r.Use(sloggin.New(httpLogger))
+        r.Use(gin.Recovery())
+
+        setupTracing(r)
+        defer tracing.TeardownTracing()
+
+        setupCORS(r)
+
+        checkInternalServiceTokenConfig()
+
+        setupMetrics(r)
+
+        database.SetupDatabase()
+        defer database.TeardownDatabase()
+
+        setupAcuator(r)
+
+        setupSwagger(r)
+
+        r.Use(RateLimiter())
+
+        server.SetupHandlers(r, jwksCache, auth0Config)
+
+        _ = r.Run(util.GetEnv(apiconstants.BIND_ADDRESS, ":8000"))</span>
+}
+
+func setupSwagger(r *gin.Engine) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up Swagger...")
+
+        docs.SwaggerInfo.Version = os.Getenv(apiconstants.VERSION)
+        docs.SwaggerInfo.Host = util.GetEnv(apiconstants.INGRESS_HOST, "localhost")
+        docs.SwaggerInfo.BasePath = util.GetEnv(apiconstants.INGRESS_BASE_PATH, "/")
+        docs.SwaggerInfo.Schemes = strings.Split(util.GetEnv(apiconstants.INGRESS_SCHEMES, "http"), ",")
+        r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
+}</span>
+
+// checkInternalServiceTokenConfig warns at startup if INTERNAL_SERVICE_TOKEN
+// is unset, since that permanently disables the internal-service-token path
+// on /api/admin/* (every such request falls through to the Auth0
+// bearer-token check) rather than silently trusting an empty token.
+func checkInternalServiceTokenConfig() <span class="cov0" title="0">{
+        if util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "") == "" </span><span class="cov0" title="0">{
+                logging.Logger.Warn("INTERNAL_SERVICE_TOKEN not set, /api/admin/* will only accept Auth0 bearer tokens with the admin role")
+        }</span>
+}
+
+func setupCORS(r *gin.Engine) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up CORS...")
+
+        origins := util.GetEnv(constants.ALLOWED_ORIGINS, "")
+        if origins == "" </span><span class="cov0" title="0">{
+                logging.Logger.Warn("ALLOWED_ORIGINS not set, no cross-origin requests will be allowed")
+                return
+        }</span>
+
+        <span class="cov0" title="0">r.Use(cors.New(cors.Config{
+                AllowOrigins:     strings.Split(origins, ","),
+                AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+                AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+                AllowCredentials: true,
+                MaxAge:           12 * time.Hour,
+        }))</span>
+}
+
+func setupSentry() <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up Sentry...")
+
+        sentryDsn, found := os.LookupEnv(apiconstants.SENTRY_DSN)
+        if found </span><span class="cov0" title="0">{
+                sentryDebug, _ := strconv.ParseBool(util.GetEnv(apiconstants.SENTRY_DEBUG, "false"))
+                err := sentry.Init(sentry.ClientOptions{
+                        Dsn:              sentryDsn,
+                        Debug:            sentryDebug,
+                        AttachStacktrace: true,
+                        EnableTracing:    true,
+                        TracesSampleRate: 1.0,
+                        TracesSampler: sentry.TracesSampler(func(ctx sentry.SamplingContext) float64 </span><span class="cov0" title="0">{
+                                if strings.Contains(ctx.Span.Name, "/status/") </span><span class="cov0" title="0">{
+                                        return 0.0
+                                }</span>
+                                <span class="cov0" title="0">return 1.0</span>
+                        }),
+                        ServerName: constants.ServiceName,
+                })
+                <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                        logging.Logger.Error("Error while trying to initialize Sentry", "error", err.Error())
+                }</span>
+                <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                        log.Print("Flushing Sentry...")
+                        sentry.Flush(2 * time.Second)
+                }</span>()
+        }
+}
+
+func setupProfiling() func() <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up continuous profiling...")
+
+        serverAddress, found := os.LookupEnv(constants.PYROSCOPE_SERVER_ADDRESS)
+        if !found </span><span class="cov0" title="0">{
+                logging.Logger.Warn("PYROSCOPE_SERVER_ADDRESS not set, continuous profiling disabled")
+                return nil
+        }</span>
+
+        <span class="cov0" title="0">profiler, err := pyroscope.Start(pyroscope.Config{
+                ApplicationName: constants.ServiceName,
+                ServerAddress:   serverAddress,
+                TenantID:        util.GetEnv(constants.PYROSCOPE_TENANT_ID, ""),
+                Tags: map[string]string{
+                        "env": util.GetEnv(apiconstants.ENV, "dev"),
+                },
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Error while trying to initialize continuous profiling", "error", err.Error())
+                return nil
+        }</span>
+
+        <span class="cov0" title="0">return func() </span><span class="cov0" title="0">{
+                _ = profiler.Stop()
+        }</span>
+}
+
+func setupAcuator(r *gin.Engine) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up actuator...")
+
+        actuatorHandler := actuator.GetActuatorHandler(&amp;actuator.Config{
+                Endpoints: []int{
+                        actuator.Env,
+                        actuator.Info,
+                        actuator.Metrics,
+                        actuator.Ping,
+                        actuator.ThreadDump,
+                },
+                Env:     util.GetEnv(apiconstants.ENV, "dev"),
+                Name:    constants.ServiceName,
+                Port:    util.GetEnvInt(apiconstants.PORT, 0),
+                Version: util.GetEnv(apiconstants.VERSION, "v0.0.0"),
+        })
+        ginActuatorHandler := func(ctx *gin.Context) </span><span class="cov0" title="0">{
+                actuatorHandler(ctx.Writer, ctx.Request)
+        }</span>
+        <span class="cov0" title="0">r.GET("/actuator/*endpoint", ginActuatorHandler)</span>
+}
+
+func setupTracing(r *gin.Engine) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up tracing...")
+
+        // Teardown is deferred by the caller (main), not here - deferring it in this function
+        // would run it as soon as this function returns, shutting down the tracer provider
+        // before the server ever serves a request, silently dropping every span.
+        tracing.SetupTracing(constants.ServiceName)
+        r.Use(otelgin.Middleware(constants.ServiceName))
+}</span>
+
+func setupMetrics(r *gin.Engine) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up metrics endpoint...")
+
+        m := ginmetrics.GetMonitor()
+        m.SetMetricPath("/metrics")
+        m.SetSlowTime(10)
+        m.SetDuration([]float64{0.1, 0.3, 1.2, 5, 10})
+        m.Use(r)
+}</span>
+
+func RateLimiter() gin.HandlerFunc <span class="cov0" title="0">{
+        limiter := rate.NewLimiter(1, util.GetEnvInt(apiconstants.RATE_LIMIT, 10))
+
+        return func(c *gin.Context) </span><span class="cov0" title="0">{
+                if limiter.Allow() </span><span class="cov0" title="0">{
+                        c.Next()
+                }</span> else<span class="cov0" title="0"> {
+                        logging.Logger.Warn("Rate limit exceeded")
+                        c.JSON(429, vo.ErrorVO{
+                                Error:   apiconstants.ErrorRateLimited,
+                                Message: "Limit exceeded",
+                        })
+                }</span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">// Package docs Code generated by swaggo/swag. DO NOT EDIT
+package docs
+
+import "github.com/swaggo/swag"
+
+const docTemplate = `{
+    "schemes": {{ marshal .Schemes }},
+    "swagger": "2.0",
+    "info": {
+        "description": "{{escape .Description}}",
+        "title": "{{.Title}}",
+        "termsOfService": "https://pilgrimagesoftware.com/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "https://sweetrpg.com",
+            "email": "admin@sweetrpg.com"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://mit-license.org/"
+        },
+        "version": "{{.Version}}"
+    },
+    "host": "{{.Host}}",
+    "basePath": "{{.BasePath}}",
+    "paths": {
+        "/api/admin/deny-entries/{subject}": {
+            "post": {
+                "description": "Deny a subject access to a service",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Deny a subject access to a service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub, for audit attribution",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth0 subject",
+                        "name": "subject",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Service to deny",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/server.denyEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "204": {
+                        "description": "No Content - deny entry already present"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/deny-entries/{subject}/{service}": {
+            "delete": {
+                "description": "Remove a subject's service deny entry",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Remove a subject's service deny entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub, for audit attribution",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth0 subject",
+                        "name": "subject",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Service to un-deny",
+                        "name": "service",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/roles": {
+            "get": {
+                "description": "Bulk lookup of roles/deny-entries by subject",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Bulk lookup of roles/deny-entries by subject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub, for audit attribution",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated Auth0 subjects",
+                        "name": "subjects",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/server.subjectRolesSummary"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/roles/{subject}": {
+            "get": {
+                "description": "Get a subject's roles and deny entries",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get a subject's roles and deny entries",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub, for audit attribution",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth0 subject",
+                        "name": "subject",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/server.subjectRolesSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add a role to a subject",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Add a role to a subject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub, for audit attribution",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth0 subject",
+                        "name": "subject",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Role to add",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/server.roleAssignmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "204": {
+                        "description": "No Content - role already present"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/roles/{subject}/{role}": {
+            "delete": {
+                "description": "Remove a role from a subject",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Remove a role from a subject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub, for audit attribution",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth0 subject",
+                        "name": "subject",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Role to remove",
+                        "name": "role",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
+        "/authz/check": {
+            "post": {
+                "description": "Authorize a service request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "authz"
+                ],
+                "summary": "Authorize a service request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bearer \u003cAuth0 access token\u003e",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Service to check access for",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/server.authzCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/server.authzDeniedResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/server.authzErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/status/health": {
+            "get": {
+                "description": "Health check",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "status"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/vo.HealthResponseVO"
+                        }
+                    }
+                }
+            }
+        },
+        "/status/ping": {
+            "get": {
+                "description": "Ping",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "status"
+                ],
+                "summary": "Ping",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/vo.PingResponseVO"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "server.authzAllowedResponse": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "boolean"
+                },
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sub": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.authzCheckRequest": {
+            "type": "object",
+            "required": [
+                "service"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.authzDeniedResponse": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "boolean"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.authzErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.denyEntryRequest": {
+            "type": "object",
+            "required": [
+                "service"
+            ],
+            "properties": {
+                "service": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.roleAssignmentRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.subjectRolesSummary": {
+            "type": "object",
+            "properties": {
+                "deniedServices": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subject": {
+                    "type": "string"
+                }
+            }
+        },
+        "vo.ErrorVO": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "vo.HealthResponseVO": {
+            "type": "object",
+            "properties": {
+                "collections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "database": {
+                    "type": "string"
+                },
+                "errors": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ping": {
+                    "type": "string"
+                }
+            }
+        },
+        "vo.PingResponseVO": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}`
+
+// SwaggerInfo holds exported Swagger Info so clients can modify it
+var SwaggerInfo = &amp;swag.Spec{
+        Version:          "1.0",
+        Host:             "",
+        BasePath:         "",
+        Schemes:          []string{},
+        Title:            "Auth API service",
+        Description:      "Swagger APIs",
+        InfoInstanceName: "swagger",
+        SwaggerTemplate:  docTemplate,
+        LeftDelim:        "{{",
+        RightDelim:       "}}",
+}
+
+func init() <span class="cov0" title="0">{
+        swag.Register(SwaggerInfo.InstanceName(), SwaggerInfo)
+}</span>
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">// Package models defines the persisted document shapes for auth-api.
+package models
+
+import (
+        "context"
+        "time"
+
+        "github.com/google/uuid"
+        "github.com/sweetrpg/auth-api/constants"
+        "github.com/sweetrpg/mongodb.go/database"
+        "go.mongodb.org/mongo-driver/bson"
+)
+
+// AuditStatus tracks whether the mutation an AdminActionAuditLog record
+// covers actually completed.
+type AuditStatus string
+
+const (
+        AuditAttempted AuditStatus = "attempted"
+        AuditSucceeded AuditStatus = "succeeded"
+        AuditFailed    AuditStatus = "failed"
+)
+
+// AdminActionAuditLog attributes a write-route mutation (grant/revoke a
+// role, add/remove a service deny entry) to the acting user who made it.
+// Written *before* the mutation is attempted (status "attempted") and
+// updated *after* it completes - see RecordAuditAttempt and CompleteAudit.
+// If the "before" write fails, the mutation must not be performed: an audit
+// trail that can silently fail to exist is not an audit trail. Both
+// ActingUserSub and TargetSubject are raw Auth0 sub strings, not foreign
+// keys - auth-api holds no profile data to key against.
+type AdminActionAuditLog struct {
+        ID            uuid.UUID   `bson:"_id" json:"id"`
+        ActingUserSub string      `bson:"actingUserSub" json:"actingUserSub"`
+        Action        string      `bson:"action" json:"action"`
+        TargetSubject string      `bson:"targetSubject" json:"targetSubject"`
+        Detail        string      `bson:"detail" json:"detail"`
+        Status        AuditStatus `bson:"status" json:"status"`
+        AttemptedAt   time.Time   `bson:"attemptedAt" json:"attemptedAt"`
+        CompletedAt   *time.Time  `bson:"completedAt,omitempty" json:"completedAt,omitempty"`
+        ErrorMessage  string      `bson:"errorMessage,omitempty" json:"errorMessage,omitempty"`
+}
+
+// RecordAuditAttempt writes the "attempted" audit record for a write-route
+// mutation before the mutation itself runs. Returns the record's ID for a
+// later CompleteAudit call. Callers must not perform the mutation if this
+// returns an error.
+func RecordAuditAttempt(ctx context.Context, actingUserSub, action, targetSubject, detail string) (uuid.UUID, error) <span class="cov0" title="0">{
+        entry := AdminActionAuditLog{
+                ID:            uuid.New(),
+                ActingUserSub: actingUserSub,
+                Action:        action,
+                TargetSubject: targetSubject,
+                Detail:        detail,
+                Status:        AuditAttempted,
+                AttemptedAt:   time.Now().UTC(),
+        }
+        _, err := database.Db.Collection(constants.AdminActionAuditLogCollection).InsertOne(ctx, entry)
+        return entry.ID, err
+}</span>
+
+// CompleteAudit updates an audit record to its final status after the
+// mutation it covers has run. Best-effort: a failure here doesn't undo a
+// mutation that already happened, so callers should log a warning rather
+// than fail the request on error.
+func CompleteAudit(ctx context.Context, id uuid.UUID, status AuditStatus, errMessage string) error <span class="cov0" title="0">{
+        update := bson.M{"status": status, "completedAt": time.Now().UTC()}
+        if errMessage != "" </span><span class="cov0" title="0">{
+                update["errorMessage"] = errMessage
+        }</span>
+        <span class="cov0" title="0">_, err := database.Db.Collection(constants.AdminActionAuditLogCollection).UpdateByID(ctx, id, bson.M{"$set": update})
+        return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package models
+
+// Role is the platform's fixed role model. A user may hold more than one
+// role at once (e.g. user and editor) - deliberately not a generic
+// permissions matrix, see design.md's "Role model" decision. Matches
+// AuthModel's Swift Role enum exactly.
+type Role string
+
+const (
+        RoleUser      Role = "user"
+        RoleSubmitter Role = "submitter"
+        RoleEditor    Role = "editor"
+        RoleModerator Role = "moderator"
+        RoleApprover  Role = "approver"
+        RoleAdmin     Role = "admin"
+)
+
+var validRoles = map[Role]struct{}{
+        RoleUser:      {},
+        RoleSubmitter: {},
+        RoleEditor:    {},
+        RoleModerator: {},
+        RoleApprover:  {},
+        RoleAdmin:     {},
+}
+
+// ParseRole validates s against the platform's fixed role model.
+func ParseRole(s string) (Role, bool) <span class="cov0" title="0">{
+        r := Role(s)
+        _, ok := validRoles[r]
+        return r, ok
+}</span>
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package models
+
+import (
+        "context"
+        "time"
+
+        "github.com/google/uuid"
+        "github.com/sweetrpg/auth-api/constants"
+        "github.com/sweetrpg/mongodb.go/database"
+        "go.mongodb.org/mongo-driver/bson"
+)
+
+// ServiceDenyEntry is an explicit deny of one subject's access to one
+// service. Absence of a row means access is allowed - see design.md's
+// "Per-service access: default-allow + deny-list" decision. Keyed on the
+// Auth0 subject directly, same rationale as UserRole.
+type ServiceDenyEntry struct {
+        ID        uuid.UUID `bson:"_id" json:"id"`
+        Subject   string    `bson:"subject" json:"subject"`
+        Service   string    `bson:"service" json:"service"`
+        CreatedAt time.Time `bson:"createdAt" json:"createdAt"`
+}
+
+// ListDenyEntriesForSubject returns every deny entry for subject.
+func ListDenyEntriesForSubject(ctx context.Context, subject string) ([]*ServiceDenyEntry, error) <span class="cov0" title="0">{
+        return database.Query[ServiceDenyEntry](
+                constants.ServiceDenyEntriesCollection,
+                bson.D{{Key: "subject", Value: subject}},
+                nil, nil, 0, 0,
+        )
+}</span>
+
+// HasDenyEntry reports whether subject is already denied access to service.
+func HasDenyEntry(ctx context.Context, subject, service string) (bool, error) <span class="cov0" title="0">{
+        rows, err := database.Query[ServiceDenyEntry](
+                constants.ServiceDenyEntriesCollection,
+                bson.D{{Key: "subject", Value: subject}, {Key: "service", Value: service}},
+                nil, nil, 0, 1,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return false, err
+        }</span>
+        <span class="cov0" title="0">return len(rows) &gt; 0, nil</span>
+}
+
+// AddDenyEntry inserts a new deny entry. Callers should check HasDenyEntry
+// first to keep the operation idempotent.
+func AddDenyEntry(ctx context.Context, subject, service string) error <span class="cov0" title="0">{
+        doc := ServiceDenyEntry{ID: uuid.New(), Subject: subject, Service: service, CreatedAt: time.Now().UTC()}
+        _, err := database.Db.Collection(constants.ServiceDenyEntriesCollection).InsertOne(ctx, doc)
+        return err
+}</span>
+
+// RemoveDenyEntry deletes every deny entry matching subject+service (there
+// should be at most one).
+func RemoveDenyEntry(ctx context.Context, subject, service string) error <span class="cov0" title="0">{
+        _, err := database.Db.Collection(constants.ServiceDenyEntriesCollection).DeleteMany(ctx, bson.D{
+                {Key: "subject", Value: subject}, {Key: "service", Value: service},
+        })
+        return err
+}</span>
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package models
+
+import (
+        "context"
+        "time"
+
+        "github.com/google/uuid"
+        "github.com/sweetrpg/auth-api/constants"
+        "github.com/sweetrpg/mongodb.go/database"
+        "go.mongodb.org/mongo-driver/bson"
+)
+
+// UserRole is a single role assignment. A subject with no rows here defaults
+// to RoleUser (see design.md's "Role model" decision) - this collection only
+// holds assignments beyond that default. Keyed on the Auth0 subject directly
+// rather than a foreign key into users-api's User collection - auth-api holds
+// no profile data of its own to relate to.
+type UserRole struct {
+        ID        uuid.UUID `bson:"_id" json:"id"`
+        Subject   string    `bson:"subject" json:"subject"`
+        Role      Role      `bson:"role" json:"role"`
+        CreatedAt time.Time `bson:"createdAt" json:"createdAt"`
+}
+
+// ListRolesForSubject returns every role row for subject.
+func ListRolesForSubject(ctx context.Context, subject string) ([]*UserRole, error) <span class="cov0" title="0">{
+        return database.Query[UserRole](
+                constants.UserRolesCollection,
+                bson.D{{Key: "subject", Value: subject}},
+                nil, nil, 0, 0,
+        )
+}</span>
+
+// HasRole reports whether subject already holds role.
+func HasRole(ctx context.Context, subject string, role Role) (bool, error) <span class="cov0" title="0">{
+        rows, err := database.Query[UserRole](
+                constants.UserRolesCollection,
+                bson.D{{Key: "subject", Value: subject}, {Key: "role", Value: role}},
+                nil, nil, 0, 1,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return false, err
+        }</span>
+        <span class="cov0" title="0">return len(rows) &gt; 0, nil</span>
+}
+
+// AddRole inserts a new role assignment. Callers should check HasRole first
+// to keep the operation idempotent, matching the Swift service's behavior
+// (a no-op, not a duplicate, when the subject already holds the role).
+func AddRole(ctx context.Context, subject string, role Role) error <span class="cov0" title="0">{
+        doc := UserRole{ID: uuid.New(), Subject: subject, Role: role, CreatedAt: time.Now().UTC()}
+        _, err := database.Db.Collection(constants.UserRolesCollection).InsertOne(ctx, doc)
+        return err
+}</span>
+
+// RemoveRole deletes every role row matching subject+role (there should be at
+// most one).
+func RemoveRole(ctx context.Context, subject string, role Role) error <span class="cov0" title="0">{
+        _, err := database.Db.Collection(constants.UserRolesCollection).DeleteMany(ctx, bson.D{
+                {Key: "subject", Value: subject}, {Key: "role", Value: role},
+        })
+        return err
+}</span>
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package server
+
+import (
+        "net/http"
+
+        "github.com/gin-gonic/gin"
+        "github.com/sweetrpg/auth-api/auth0"
+        "github.com/sweetrpg/auth-api/models"
+        "github.com/sweetrpg/common.go/logging"
+)
+
+type authzCheckRequest struct {
+        Service string `json:"service" binding:"required"`
+        Action  string `json:"action"`
+}
+
+type authzAllowedResponse struct {
+        Allowed bool     `json:"allowed"`
+        Roles   []string `json:"roles"`
+        Sub     string   `json:"sub"`
+}
+
+type authzDeniedResponse struct {
+        Allowed bool   `json:"allowed"`
+        Reason  string `json:"reason"`
+}
+
+type authzErrorResponse struct {
+        Error string `json:"error"`
+}
+
+func setupAuthzHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up authz endpoint handlers...")
+
+        g.POST("/authz/check", func(c *gin.Context) </span><span class="cov0" title="0">{ checkAuthz(c, cache, config) }</span>)
+}
+
+// Check whether a subject may access a service.
+//
+//         Verifies the bearer token against Auth0's JWKS, then looks up the subject's roles and any deny entry for the requested service.
+//                @Summary                Authorize a service request
+//                @Description        Authorize a service request
+//                @Tags                        authz
+//                @Accept                        json
+//                @Produce                json
+//                @Param                        Authorization        header                string                                true        "Bearer &lt;Auth0 access token&gt;"
+//                @Param                        request                        body                authzCheckRequest        true        "Service to check access for"
+//                @Success                200                                {object}        authzAllowedResponse
+//                @Success                200                                {object}        authzDeniedResponse
+//                @Failure                401                                {object}        authzErrorResponse
+//                @Router                        /authz/check [post]
+func checkAuthz(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        var req authzCheckRequest
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
+                invalidTokenResponse(c)
+                return
+        }</span>
+
+        <span class="cov0" title="0">token := bearerToken(c)
+        if token == "" </span><span class="cov0" title="0">{
+                invalidTokenResponse(c)
+                return
+        }</span>
+
+        <span class="cov0" title="0">claims, err := cache.Verify(c.Request.Context(), token, config)
+        if err != nil </span><span class="cov0" title="0">{
+                // Logged at Warn, not Error: an invalid/expired token is a routine client condition,
+                // not a service fault. Still logs the real reason (bad signature, expired, wrong
+                // issuer/audience, unresolvable kid) so it stays distinguishable from a downstream
+                // dependency failure below - the Swift service's equivalent check collapsed both into
+                // one generic "invalid_token" response with no logged cause, which cost real debugging
+                // time during a MongoDB decode failure that looked identical to an invalid token.
+                logging.Logger.Warn("Token verification failed", "error", err.Error())
+                invalidTokenResponse(c)
+                return
+        }</span>
+
+        <span class="cov0" title="0">subject := claims.Subject
+
+        denied, err := models.HasDenyEntry(c.Request.Context(), subject, req.Service)
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to look up deny entry", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, authzErrorResponse{Error: "query_failed"})
+                return
+        }</span>
+        <span class="cov0" title="0">if denied </span><span class="cov0" title="0">{
+                c.JSON(http.StatusOK, authzDeniedResponse{Allowed: false, Reason: "service_denied"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">roles, err := models.ListRolesForSubject(c.Request.Context(), subject)
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to look up roles", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, authzErrorResponse{Error: "query_failed"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">roleNames := make([]string, 0, len(roles))
+        for _, r := range roles </span><span class="cov0" title="0">{
+                roleNames = append(roleNames, string(r.Role))
+        }</span>
+        <span class="cov0" title="0">if len(roleNames) == 0 </span><span class="cov0" title="0">{
+                roleNames = []string{string(models.RoleUser)}
+        }</span>
+
+        <span class="cov0" title="0">c.JSON(http.StatusOK, authzAllowedResponse{Allowed: true, Roles: roleNames, Sub: subject})</span>
+}
+
+func invalidTokenResponse(c *gin.Context) <span class="cov0" title="0">{
+        c.JSON(http.StatusUnauthorized, authzErrorResponse{Error: "invalid_token"})
+}</span>
+
+func bearerToken(c *gin.Context) string <span class="cov8" title="1">{
+        const prefix = "Bearer "
+        auth := c.GetHeader("Authorization")
+        if len(auth) &lt;= len(prefix) || auth[:len(prefix)] != prefix </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov0" title="0">return auth[len(prefix):]</span>
+}
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package server
+
+import (
+        "github.com/gin-gonic/gin"
+        "github.com/sweetrpg/auth-api/auth0"
+)
+
+func SetupHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        setupAuthzHandlers(g, cache, config)
+        setupRolesHandlers(g, cache, config)
+        setupStatusHandlers(g)
+}</span>
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">package server
+
+import (
+        "context"
+        "crypto/subtle"
+        "fmt"
+        "net/http"
+        "strings"
+
+        "github.com/gin-gonic/gin"
+        "github.com/google/uuid"
+        apiv "github.com/sweetrpg/api-core.go/vo"
+        "github.com/sweetrpg/auth-api/auth0"
+        "github.com/sweetrpg/auth-api/constants"
+        "github.com/sweetrpg/auth-api/models"
+        "github.com/sweetrpg/common.go/logging"
+        "github.com/sweetrpg/common.go/util"
+)
+
+const (
+        internalServiceTokenHeader = "X-Internal-Service-Token"
+        actingUserSubHeader        = "X-Acting-User-Sub"
+)
+
+type subjectRolesSummary struct {
+        Subject        string   `json:"subject"`
+        Roles          []string `json:"roles"`
+        DeniedServices []string `json:"deniedServices"`
+}
+
+type roleAssignmentRequest struct {
+        Role string `json:"role" binding:"required"`
+}
+
+type denyEntryRequest struct {
+        Service string `json:"service" binding:"required"`
+}
+
+// auth-api has no user list of its own to serve (no email, no profile data)
+// - admin-web composes users-api's user list with the bulk lookup here
+// (GET /api/admin/roles?subjects=...), joined by Auth0 subject.
+func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) <span class="cov4" title="2">{
+        logging.Logger.Info("Setting up admin roles endpoint handlers...")
+
+        group := g.Group("/api/admin")
+        group.GET("/roles", func(c *gin.Context) </span><span class="cov0" title="0">{ listRoles(c, cache, config) }</span>)
+        <span class="cov4" title="2">group.GET("/roles/:subject", func(c *gin.Context) </span><span class="cov0" title="0">{ getSubject(c, cache, config) }</span>)
+        <span class="cov4" title="2">group.POST("/roles/:subject", func(c *gin.Context) </span><span class="cov4" title="2">{ addRole(c, cache, config) }</span>)
+        <span class="cov4" title="2">group.DELETE("/roles/:subject/:role", func(c *gin.Context) </span><span class="cov0" title="0">{ removeRole(c, cache, config) }</span>)
+        <span class="cov4" title="2">group.POST("/deny-entries/:subject", func(c *gin.Context) </span><span class="cov0" title="0">{ addDenyEntry(c, cache, config) }</span>)
+        <span class="cov4" title="2">group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) </span><span class="cov0" title="0">{ removeDenyEntry(c, cache, config) }</span>)
+}
+
+// GET /api/admin/roles?subjects=sub1,sub2,... - bulk roles/deny-entries for
+// a set of subjects, in one round trip, so admin-web's user list doesn't do
+// a per-row call.
+//
+//         Requires the internal service token, or an Auth0 bearer token with the admin role.
+//                @Summary                Bulk lookup of roles/deny-entries by subject
+//                @Description        Bulk lookup of roles/deny-entries by subject
+//                @Tags                        admin
+//                @Produce                json
+//                @Param                        X-Internal-Service-Token        header                string        false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header                string        false        "Acting admin's Auth0 sub, for audit attribution"
+//                @Param                        subjects                                        query                string        true        "Comma-separated Auth0 subjects"
+//                @Success                200                                                        {array}                subjectRolesSummary
+//                @Failure                400                                                        {object}        apiv.ErrorVO
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/roles [get]
+func listRoles(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        if _, ok := verifyAdminRole(c, cache, config); !ok </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">raw := c.Query("subjects")
+        if raw == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "subjects query parameter is required"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">subjects := strings.Split(raw, ",")
+        summaries := make([]subjectRolesSummary, 0, len(subjects))
+        for _, subject := range subjects </span><span class="cov0" title="0">{
+                summary, err := buildSummary(c.Request.Context(), subject)
+                if err != nil </span><span class="cov0" title="0">{
+                        logging.Logger.Error("Failed to build roles summary", "error", err.Error())
+                        c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to list roles"})
+                        return
+                }</span>
+                <span class="cov0" title="0">summaries = append(summaries, summary)</span>
+        }
+        <span class="cov0" title="0">c.JSON(http.StatusOK, summaries)</span>
+}
+
+// Get a subject's roles and deny entries.
+//
+//         Requires the internal service token, or an Auth0 bearer token with the admin role.
+//                @Summary                Get a subject's roles and deny entries
+//                @Description        Get a subject's roles and deny entries
+//                @Tags                        admin
+//                @Produce                json
+//                @Param                        X-Internal-Service-Token        header                string        false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header                string        false        "Acting admin's Auth0 sub, for audit attribution"
+//                @Param                        subject                                                path                string        true        "Auth0 subject"
+//                @Success                200                                                        {object}        subjectRolesSummary
+//                @Failure                400                                                        {object}        apiv.ErrorVO
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/roles/{subject} [get]
+func getSubject(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        if _, ok := verifyAdminRole(c, cache, config); !ok </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">subject := c.Param("subject")
+        if subject == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
+                return
+        }</span>
+        <span class="cov0" title="0">summary, err := buildSummary(c.Request.Context(), subject)
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to build roles summary", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to get subject"})
+                return
+        }</span>
+        <span class="cov0" title="0">c.JSON(http.StatusOK, summary)</span>
+}
+
+func buildSummary(ctx context.Context, subject string) (subjectRolesSummary, error) <span class="cov0" title="0">{
+        roles, err := models.ListRolesForSubject(ctx, subject)
+        if err != nil </span><span class="cov0" title="0">{
+                return subjectRolesSummary{}, err
+        }</span>
+        <span class="cov0" title="0">denials, err := models.ListDenyEntriesForSubject(ctx, subject)
+        if err != nil </span><span class="cov0" title="0">{
+                return subjectRolesSummary{}, err
+        }</span>
+
+        <span class="cov0" title="0">roleNames := make([]string, 0, len(roles))
+        for _, r := range roles </span><span class="cov0" title="0">{
+                roleNames = append(roleNames, string(r.Role))
+        }</span>
+        <span class="cov0" title="0">if len(roleNames) == 0 </span><span class="cov0" title="0">{
+                roleNames = []string{string(models.RoleUser)}
+        }</span>
+
+        <span class="cov0" title="0">deniedServices := make([]string, 0, len(denials))
+        for _, d := range denials </span><span class="cov0" title="0">{
+                deniedServices = append(deniedServices, d.Service)
+        }</span>
+
+        <span class="cov0" title="0">return subjectRolesSummary{Subject: subject, Roles: roleNames, DeniedServices: deniedServices}, nil</span>
+}
+
+// Add a role to a subject.
+//
+//         Idempotent - a no-op, not a duplicate, if the subject already holds the role. Requires the internal service token, or an Auth0 bearer token with the admin role.
+//                @Summary                Add a role to a subject
+//                @Description        Add a role to a subject
+//                @Tags                        admin
+//                @Accept                        json
+//                @Param                        X-Internal-Service-Token        header        string                                        false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header        string                                        false        "Acting admin's Auth0 sub, for audit attribution"
+//                @Param                        subject                                                path        string                                        true        "Auth0 subject"
+//                @Param                        request                                                body        roleAssignmentRequest        true        "Role to add"
+//                @Success                201                                                        "Created"
+//                @Success                204                                                        "No Content - role already present"
+//                @Failure                400                                                        {object}        apiv.ErrorVO
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/roles/{subject} [post]
+func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov4" title="2">{
+        actingUserSub, ok := verifyAdminRole(c, cache, config)
+        if !ok </span><span class="cov4" title="2">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">subject := c.Param("subject")
+        if subject == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
+                return
+        }</span>
+        <span class="cov0" title="0">var req roleAssignmentRequest
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: err.Error()})
+                return
+        }</span>
+        <span class="cov0" title="0">role, ok := models.ParseRole(req.Role)
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid role"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">status, err := performAudited(c.Request.Context(), actingUserSub, "add_role", subject, string(role),
+                func(ctx context.Context) (int, error) </span><span class="cov0" title="0">{
+                        exists, err := models.HasRole(ctx, subject, role)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return 0, err
+                        }</span>
+                        <span class="cov0" title="0">if exists </span><span class="cov0" title="0">{
+                                return http.StatusNoContent, nil
+                        }</span>
+                        <span class="cov0" title="0">if err := models.AddRole(ctx, subject, role); err != nil </span><span class="cov0" title="0">{
+                                return 0, err
+                        }</span>
+                        <span class="cov0" title="0">return http.StatusCreated, nil</span>
+                })
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to add role", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "audit_failed", Message: "failed to add role"})
+                return
+        }</span>
+        <span class="cov0" title="0">c.Status(status)</span>
+}
+
+// Remove a role from a subject.
+//
+//         Requires the internal service token, or an Auth0 bearer token with the admin role.
+//                @Summary                Remove a role from a subject
+//                @Description        Remove a role from a subject
+//                @Tags                        admin
+//                @Param                        X-Internal-Service-Token        header        string        false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header        string        false        "Acting admin's Auth0 sub, for audit attribution"
+//                @Param                        subject                                                path        string        true        "Auth0 subject"
+//                @Param                        role                                                path        string        true        "Role to remove"
+//                @Success                204                                                        "No Content"
+//                @Failure                400                                                        {object}        apiv.ErrorVO
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/roles/{subject}/{role} [delete]
+func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        actingUserSub, ok := verifyAdminRole(c, cache, config)
+        if !ok </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">subject := c.Param("subject")
+        if subject == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
+                return
+        }</span>
+        <span class="cov0" title="0">role, ok := models.ParseRole(c.Param("role"))
+        if !ok </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid role"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">status, err := performAudited(c.Request.Context(), actingUserSub, "remove_role", subject, string(role),
+                func(ctx context.Context) (int, error) </span><span class="cov0" title="0">{
+                        if err := models.RemoveRole(ctx, subject, role); err != nil </span><span class="cov0" title="0">{
+                                return 0, err
+                        }</span>
+                        <span class="cov0" title="0">return http.StatusNoContent, nil</span>
+                })
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to remove role", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "audit_failed", Message: "failed to remove role"})
+                return
+        }</span>
+        <span class="cov0" title="0">c.Status(status)</span>
+}
+
+// Add a service deny entry for a subject.
+//
+//         Idempotent - a no-op, not a duplicate, if the entry already exists. Requires the internal service token, or an Auth0 bearer token with the admin role.
+//                @Summary                Deny a subject access to a service
+//                @Description        Deny a subject access to a service
+//                @Tags                        admin
+//                @Accept                        json
+//                @Param                        X-Internal-Service-Token        header        string                                false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header        string                                false        "Acting admin's Auth0 sub, for audit attribution"
+//                @Param                        subject                                                path        string                                true        "Auth0 subject"
+//                @Param                        request                                                body        denyEntryRequest        true        "Service to deny"
+//                @Success                201                                                        "Created"
+//                @Success                204                                                        "No Content - deny entry already present"
+//                @Failure                400                                                        {object}        apiv.ErrorVO
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/deny-entries/{subject} [post]
+func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        actingUserSub, ok := verifyAdminRole(c, cache, config)
+        if !ok </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">subject := c.Param("subject")
+        if subject == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
+                return
+        }</span>
+        <span class="cov0" title="0">var req denyEntryRequest
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">status, err := performAudited(c.Request.Context(), actingUserSub, "add_deny_entry", subject, req.Service,
+                func(ctx context.Context) (int, error) </span><span class="cov0" title="0">{
+                        exists, err := models.HasDenyEntry(ctx, subject, req.Service)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return 0, err
+                        }</span>
+                        <span class="cov0" title="0">if exists </span><span class="cov0" title="0">{
+                                return http.StatusNoContent, nil
+                        }</span>
+                        <span class="cov0" title="0">if err := models.AddDenyEntry(ctx, subject, req.Service); err != nil </span><span class="cov0" title="0">{
+                                return 0, err
+                        }</span>
+                        <span class="cov0" title="0">return http.StatusCreated, nil</span>
+                })
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to add deny entry", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "audit_failed", Message: "failed to add deny entry"})
+                return
+        }</span>
+        <span class="cov0" title="0">c.Status(status)</span>
+}
+
+// Remove a service deny entry for a subject.
+//
+//         Requires the internal service token, or an Auth0 bearer token with the admin role.
+//                @Summary                Remove a subject's service deny entry
+//                @Description        Remove a subject's service deny entry
+//                @Tags                        admin
+//                @Param                        X-Internal-Service-Token        header        string        false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header        string        false        "Acting admin's Auth0 sub, for audit attribution"
+//                @Param                        subject                                                path        string        true        "Auth0 subject"
+//                @Param                        service                                                path        string        true        "Service to un-deny"
+//                @Success                204                                                        "No Content"
+//                @Failure                400                                                        {object}        apiv.ErrorVO
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/deny-entries/{subject}/{service} [delete]
+func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov0" title="0">{
+        actingUserSub, ok := verifyAdminRole(c, cache, config)
+        if !ok </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">subject := c.Param("subject")
+        if subject == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
+                return
+        }</span>
+        <span class="cov0" title="0">service := c.Param("service")
+        if service == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid service"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">status, err := performAudited(c.Request.Context(), actingUserSub, "remove_deny_entry", subject, service,
+                func(ctx context.Context) (int, error) </span><span class="cov0" title="0">{
+                        if err := models.RemoveDenyEntry(ctx, subject, service); err != nil </span><span class="cov0" title="0">{
+                                return 0, err
+                        }</span>
+                        <span class="cov0" title="0">return http.StatusNoContent, nil</span>
+                })
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to remove deny entry", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "audit_failed", Message: "failed to remove deny entry"})
+                return
+        }</span>
+        <span class="cov0" title="0">c.Status(status)</span>
+}
+
+// performAudited writes an AdminActionAuditLog row *before* running
+// operation, and fails closed - never calling operation at all - if that
+// write itself fails: an admin action that can't be logged must not be
+// performed. Updates the same row to succeeded/failed after operation
+// completes; that post-write is best-effort (logged on failure, but doesn't
+// retroactively undo an action that already happened - the pre-write is the
+// hard gate, not the post-write).
+func performAudited(
+        ctx context.Context, actingUserSub, action, targetSubject, detail string,
+        operation func(context.Context) (int, error),
+) (int, error) <span class="cov0" title="0">{
+        return performAuditedWith(
+                ctx, actingUserSub, action, targetSubject, detail, operation,
+                models.RecordAuditAttempt, models.CompleteAudit,
+        )
+}</span>
+
+// performAuditedWith takes the audit read/write functions as parameters so
+// the fail-closed contract above (operation must never run if the "before"
+// audit write fails) can be verified in a test without a live database -
+// see roles_audit_test.go.
+func performAuditedWith(
+        ctx context.Context, actingUserSub, action, targetSubject, detail string,
+        operation func(context.Context) (int, error),
+        recordAttempt func(context.Context, string, string, string, string) (uuid.UUID, error),
+        complete func(context.Context, uuid.UUID, models.AuditStatus, string) error,
+) (int, error) <span class="cov6" title="3">{
+        auditID, err := recordAttempt(ctx, actingUserSub, action, targetSubject, detail)
+        if err != nil </span><span class="cov1" title="1">{
+                logging.Logger.Error("Refusing to perform admin action - audit log write failed", "action", action, "error", err.Error())
+                return 0, fmt.Errorf("could not record audit log; action not performed: %w", err)
+        }</span>
+
+        <span class="cov4" title="2">status, opErr := operation(ctx)
+        if opErr != nil </span><span class="cov1" title="1">{
+                if err := complete(ctx, auditID, models.AuditFailed, opErr.Error()); err != nil </span><span class="cov0" title="0">{
+                        logging.Logger.Warn("Failed to record failure for audit log", "auditID", auditID, "error", err.Error())
+                }</span>
+                <span class="cov1" title="1">return 0, opErr</span>
+        }
+
+        <span class="cov1" title="1">if err := complete(ctx, auditID, models.AuditSucceeded, ""); err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Warn("Failed to record success for audit log", "auditID", auditID, "error", err.Error())
+        }</span>
+        <span class="cov1" title="1">return status, nil</span>
+}
+
+// verifyAdminRole resolves the acting user's subject, or writes an error
+// response and returns ok=false. Trusts a valid X-Internal-Service-Token
+// outright (see hasValidInternalServiceToken for why admin-web uses this
+// instead of an Auth0 bearer token) but still requires an
+// X-Acting-User-Sub header identifying who initiated the action, since
+// every mutating route needs that for its audit log. Falls through to
+// verifying an Auth0 bearer token's admin role otherwise, using the
+// verified token's own subject as the acting user.
+func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, bool) <span class="cov4" title="2">{
+        if hasValidInternalServiceToken(c) </span><span class="cov1" title="1">{
+                actingUserSub := c.GetHeader(actingUserSubHeader)
+                if actingUserSub == "" </span><span class="cov1" title="1">{
+                        c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "X-Acting-User-Sub header is required"})
+                        return "", false
+                }</span>
+                <span class="cov0" title="0">return actingUserSub, true</span>
+        }
+
+        <span class="cov1" title="1">token := bearerToken(c)
+        if token == "" </span><span class="cov1" title="1">{
+                c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
+                return "", false
+        }</span>
+
+        <span class="cov0" title="0">claims, err := cache.Verify(c.Request.Context(), token, config)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
+                return "", false
+        }</span>
+
+        <span class="cov0" title="0">roles, err := models.ListRolesForSubject(c.Request.Context(), claims.Subject)
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to look up roles", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to verify admin role"})
+                return "", false
+        }</span>
+        <span class="cov0" title="0">hasAdmin := false
+        for _, r := range roles </span><span class="cov0" title="0">{
+                if r.Role == models.RoleAdmin </span><span class="cov0" title="0">{
+                        hasAdmin = true
+                        break</span>
+                }
+        }
+        <span class="cov0" title="0">if !hasAdmin </span><span class="cov0" title="0">{
+                c.JSON(http.StatusForbidden, apiv.ErrorVO{Error: "forbidden", Message: "admin role required"})
+                return "", false
+        }</span>
+        <span class="cov0" title="0">return claims.Subject, true</span>
+}
+
+// hasValidInternalServiceToken reports whether the request presented the
+// correct X-Internal-Service-Token header, compared constant-time against
+// INTERNAL_SERVICE_TOKEN. Always false when INTERNAL_SERVICE_TOKEN is unset
+// - the internal-auth path is then permanently disabled rather than
+// trusting an empty token.
+func hasValidInternalServiceToken(c *gin.Context) bool <span class="cov10" title="6">{
+        expected := util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "")
+        if expected == "" </span><span class="cov1" title="1">{
+                return false
+        }</span>
+        <span class="cov9" title="5">presented := c.GetHeader(internalServiceTokenHeader)
+        return subtle.ConstantTimeCompare([]byte(expected), []byte(presented)) == 1</span>
+}
+</pre>
+		
+		<pre class="file" id="file11" style="display: none">package server
+
+import (
+        "net/http"
+
+        "github.com/gin-gonic/gin"
+        apicores "github.com/sweetrpg/api-core.go/server"
+        _ "github.com/sweetrpg/api-core.go/vo"
+        "github.com/sweetrpg/common.go/logging"
+)
+
+func setupStatusHandlers(g *gin.Engine) <span class="cov0" title="0">{
+        logging.Logger.Info("Setting up status endpoint handlers...")
+
+        </span><span class="cov0" title="0">{
+                a := g.Group("/status")
+                a.GET("/health", healthHandler)
+        }</span>
+
+        <span class="cov0" title="0">g.GET("/status/ping", pingHandler)</span>
+}
+
+// Health check.
+//
+//         Do a health check of the application and its dependencies and return the results
+//                @Summary                Health check
+//                @Description        Health check
+//                @Tags                        status
+//                @Produce                json
+//                @Success                200                {object}        vo.HealthResponseVO
+//                @Router                        /status/health [get]
+func healthHandler(c *gin.Context) <span class="cov0" title="0">{
+        resp := apicores.HealthHandler(c.Request.Context())
+        status := http.StatusOK
+        if resp.Errors &gt; 0 </span><span class="cov0" title="0">{
+                status = http.StatusServiceUnavailable
+        }</span>
+        <span class="cov0" title="0">c.JSON(status, resp)</span>
+}
+
+// Ping the application.
+//
+//         A shallow health check to see if basic responses are working. Returns the date and hostname of the server handling the request.
+//                @Summary                Ping
+//                @Description        Ping
+//                @Tags                        status
+//                @Produce                json
+//                @Success                200                {object}        vo.PingResponseVO
+//                @Router                        /status/ping [get]
+func pingHandler(c *gin.Context) <span class="cov0" title="0">{
+        c.JSON(http.StatusOK, apicores.PingHandler())
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
