@@ -45,7 +45,7 @@ spec:
                       - secretRef:
                             name: api-misc
                   ports:
-                      - containerPort: 8080
+                      - containerPort: 8000
                         name: http
                   resources:
                       requests:

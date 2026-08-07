@@ -16,12 +16,7 @@ on:
 
 jobs:
   release:
-    uses: sweetrpg/github-actions/.github/workflows/swift-release.yaml@master
+    uses: sweetrpg/github-actions/.github/workflows/go-release.yaml@master
     with:
       tag: ${{ inputs.tag }}
-      # PR/CI validation doesn't need this override, but the release workflow's clean,
-      # full-history resolution (fetch-depth: 0, fetch-tags: true) pulls in swift-log/swift-nio
-      # releases requiring a newer swift-tools-version than this reusable workflow's "6.0"
-      # default toolchain - same failure mode admin-web/auth-web hit on their v0.1.0 releases.
-      swift-version: "6.2"
     secrets: inherit

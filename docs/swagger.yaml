@@ -1,0 +1,435 @@
+definitions:
+  server.authzAllowedResponse:
+    properties:
+      allowed:
+        type: boolean
+      roles:
+        items:
+          type: string
+        type: array
+      sub:
+        type: string
+    type: object
+  server.authzCheckRequest:
+    properties:
+      action:
+        type: string
+      service:
+        type: string
+    required:
+    - service
+    type: object
+  server.authzDeniedResponse:
+    properties:
+      allowed:
+        type: boolean
+      reason:
+        type: string
+    type: object
+  server.authzErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  server.denyEntryRequest:
+    properties:
+      service:
+        type: string
+    required:
+    - service
+    type: object
+  server.roleAssignmentRequest:
+    properties:
+      role:
+        type: string
+    required:
+    - role
+    type: object
+  server.subjectRolesSummary:
+    properties:
+      deniedServices:
+        items:
+          type: string
+        type: array
+      roles:
+        items:
+          type: string
+        type: array
+      subject:
+        type: string
+    type: object
+  vo.ErrorVO:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  vo.HealthResponseVO:
+    properties:
+      collections:
+        items:
+          type: string
+        type: array
+      database:
+        type: string
+      errors:
+        type: integer
+      messages:
+        items:
+          type: string
+        type: array
+      ping:
+        type: string
+    type: object
+  vo.PingResponseVO:
+    properties:
+      date:
+        type: string
+      hostname:
+        type: string
+    type: object
+info:
+  contact:
+    email: admin@sweetrpg.com
+    name: API Support
+    url: https://sweetrpg.com
+  description: Swagger APIs
+  license:
+    name: MIT
+    url: https://mit-license.org/
+  termsOfService: https://pilgrimagesoftware.com/terms/
+  title: Auth API service
+  version: "1.0"
+paths:
+  /api/admin/deny-entries/{subject}:
+    post:
+      consumes:
+      - application/json
+      description: Deny a subject access to a service
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub, for audit attribution
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      - description: Auth0 subject
+        in: path
+        name: subject
+        required: true
+        type: string
+      - description: Service to deny
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/server.denyEntryRequest'
+      responses:
+        "201":
+          description: Created
+        "204":
+          description: No Content - deny entry already present
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Deny a subject access to a service
+      tags:
+      - admin
+  /api/admin/deny-entries/{subject}/{service}:
+    delete:
+      description: Remove a subject's service deny entry
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub, for audit attribution
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      - description: Auth0 subject
+        in: path
+        name: subject
+        required: true
+        type: string
+      - description: Service to un-deny
+        in: path
+        name: service
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Remove a subject's service deny entry
+      tags:
+      - admin
+  /api/admin/roles:
+    get:
+      description: Bulk lookup of roles/deny-entries by subject
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub, for audit attribution
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      - description: Comma-separated Auth0 subjects
+        in: query
+        name: subjects
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/server.subjectRolesSummary'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Bulk lookup of roles/deny-entries by subject
+      tags:
+      - admin
+  /api/admin/roles/{subject}:
+    get:
+      description: Get a subject's roles and deny entries
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub, for audit attribution
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      - description: Auth0 subject
+        in: path
+        name: subject
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/server.subjectRolesSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Get a subject's roles and deny entries
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: Add a role to a subject
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub, for audit attribution
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      - description: Auth0 subject
+        in: path
+        name: subject
+        required: true
+        type: string
+      - description: Role to add
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/server.roleAssignmentRequest'
+      responses:
+        "201":
+          description: Created
+        "204":
+          description: No Content - role already present
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Add a role to a subject
+      tags:
+      - admin
+  /api/admin/roles/{subject}/{role}:
+    delete:
+      description: Remove a role from a subject
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub, for audit attribution
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      - description: Auth0 subject
+        in: path
+        name: subject
+        required: true
+        type: string
+      - description: Role to remove
+        in: path
+        name: role
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Remove a role from a subject
+      tags:
+      - admin
+  /authz/check:
+    post:
+      consumes:
+      - application/json
+      description: Authorize a service request
+      parameters:
+      - description: Bearer <Auth0 access token>
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Service to check access for
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/server.authzCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/server.authzDeniedResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/server.authzErrorResponse'
+      summary: Authorize a service request
+      tags:
+      - authz
+  /status/health:
+    get:
+      description: Health check
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/vo.HealthResponseVO'
+      summary: Health check
+      tags:
+      - status
+  /status/ping:
+    get:
+      description: Ping
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/vo.PingResponseVO'
+      summary: Ping
+      tags:
+      - status
+swagger: "2.0"

@@ -9,5 +9,5 @@ permissions:
 
 jobs:
   ci:
-    uses: sweetrpg/github-actions/.github/workflows/swift-ci.yaml@master
+    uses: sweetrpg/github-actions/.github/workflows/go-ci.yaml@master
     secrets: inherit

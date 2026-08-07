@@ -57,11 +57,9 @@ jobs:
                       type=sha
 
     # One native-runner job per platform - no QEMU emulation, and a per-platform GHA cache
-    # scope so the Swift build layer only invalidates for the arch that actually changed. Each
+    # scope so the Go build layer only invalidates for the arch that actually changed. Each
     # leg pushes its own image by digest rather than a tag; `merge` below stitches the digests
-    # into the one multi-arch manifest every tag in `meta` should point at. Previously this
-    # workflow set up QEMU but never passed `platforms:` to the build step, so it only ever
-    # produced an amd64 image - fixed here as part of the same restructuring.
+    # into the one multi-arch manifest every tag in `meta` should point at.
     build:
         needs: meta
         strategy:
@@ -153,5 +151,5 @@ jobs:
         uses: sweetrpg/github-actions/.github/workflows/argocd-update-deployment.yaml@master
         with:
             image-name: auth-api
-            manifest-path: clusters/dev/users/api.yaml
+            manifest-path: clusters/dev/auth/api.yaml
         secrets: inherit
