@@ -6,7 +6,7 @@ import XCTVapor
 
 @testable import App
 
-/// Doesn't call `configure(_:)` (which requires a reachable MongoDB via `DATABASE_URL`) - these
+/// Doesn't call `configure(_:)` (which requires a reachable MongoDB) - these
 /// only exercise the internal-service-token comparison itself, via the storage-backed setter
 /// rather than the `INTERNAL_SERVICE_TOKEN` environment variable.
 final class InternalServiceAuthTests: XCTestCase {
