@@ -1,3 +1,12 @@
+## [0.1.2] - 2026-08-07
+
+### 🐛 Bug Fixes
+
+- Build DATABASE_URL from DB_* env parts instead of requiring it whole
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.1.1
 ## [0.1.1] - 2026-08-07
 
 ### ⚙️ Miscellaneous Tasks
