@@ -22,8 +22,3 @@ labels:
 
 generatorOptions:
     disableNameSuffixHash: true
-
-images:
-    - name: auth-api
-      newName: ghcr.io/sweetrpg/auth-api
-      newTag: latest
