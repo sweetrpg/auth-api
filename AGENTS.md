@@ -80,11 +80,38 @@ in `auth0/`, env-var/collection-name constants in `constants/`, the entrypoint i
 `cmd/auth-api/main.go`. Swagger docs (`docs/`) are generated, not hand-written - see "Running
 Checks Locally".
 
+### Bootstrapping the first admin
+
+`admin-web`'s role-management UI requires the acting user to already hold the `admin` role
+(`AuthRequiredMiddleware` checks this before ever calling `RolesController`), and
+`/authz/check` only returns roles that already exist in `user_roles` - there's no
+self-service or automatic path to grant the very first admin. A `user_roles` document has to
+be inserted directly against `auth-api`'s own database before anyone can reach `admin-web`.
+
+Confirmed missing entirely after the `split-authz-into-auth-api` migration (2026-08-07): the
+`user_roles` collection in `sweetrpg-auth` was empty post-split, so every login returned zero
+roles for every subject, admins included. There is no seed script or migration that
+carries roles forward from wherever `users-api` held them before the split - if this happens
+again after a similar migration, that's the first thing to check.
+
+To bootstrap: insert a document into the `user_roles` collection (`sweetrpg-auth` database)
+with `_id` (a UUID - `models.UserRole` has no driver-level default, so a driver-level insert
+must set one explicitly), `subject` (the Auth0 `sub`, e.g. `github|<id>` - visible in
+`auth-api`'s `/authz/check` request logs during a login attempt), `role: "admin"`, and
+`createdAt` (a datetime; nothing backfills it for a driver-level insert). Use the `auth-api`
+Atlas database user's own credentials (`api-db` Secret in `sweetrpg-auth`, scoped `readWrite`
+to `sweetrpg-auth` only) rather than the shared admin user. Once the document exists, the user
+must log out and back in through `auth-web` - the session's roles are only resolved once, at
+login.
+
 ## Deployment
 
 `kubernetes/` (base + `overlays/{dev,local}`) deploys this service into the `sweetrpg-auth`
 namespace, server-to-server only - no Ingress, since every caller (`auth-web`, `admin-web`)
-reaches it over in-cluster DNS (`auth-api.sweetrpg-auth.svc.cluster.local:8000`). `DB_URI` (or the
+reaches it over in-cluster DNS (`api-v1.sweetrpg-auth.svc.cluster.local:8000` - the Service
+follows the platform's versioned-Service naming convention, not a plain `auth-api` name despite
+what this doc used to say; confirmed the hard way when `auth-web`'s hardcoded default host
+pointed at a Service that doesn't exist and broke login in dev). `DB_URI` (or the
 `DB_SCHEME`/`DB_HOST`/`DB_USER`/`DB_PW`/`DB_NAME`/`DB_OPTS` parts, its own `sweetrpg-auth`
 database via a dedicated `AtlasDatabaseUser`), `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (the one shared
 Auth0 application - see `auth-web`'s `AGENTS.md`), and `INTERNAL_SERVICE_TOKEN` all come from
