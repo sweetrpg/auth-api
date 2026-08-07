@@ -6,7 +6,7 @@ import XCTVapor
 
 @testable import App
 
-/// Doesn't call `configure(_:)` (which requires a reachable MongoDB via `DATABASE_URL`) - only
+/// Doesn't call `configure(_:)` (which requires a reachable MongoDB) - only
 /// exercises the request-validation path that runs *before* any database access, same
 /// constraint as `InternalServiceAuthTests`. `RolesController.verifyAdminRole` requires
 /// `X-Acting-User-Sub` for internal-service-token callers before it ever reaches a query or an
