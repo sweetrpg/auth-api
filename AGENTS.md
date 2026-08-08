@@ -99,10 +99,29 @@ with `_id` (a UUID - `models.UserRole` has no driver-level default, so a driver-
 must set one explicitly), `subject` (the Auth0 `sub`, e.g. `github|<id>` - visible in
 `auth-api`'s `/authz/check` request logs during a login attempt), `role: "admin"`, and
 `createdAt` (a datetime; nothing backfills it for a driver-level insert). Use the `auth-api`
-Atlas database user's own credentials (`api-db` Secret in `sweetrpg-auth`, scoped `readWrite`
-to `sweetrpg-auth` only) rather than the shared admin user. Once the document exists, the user
-must log out and back in through `auth-web` - the session's roles are only resolved once, at
-login.
+Atlas database user's own credentials (`auth-api-db-credentials` Secret in `sweetrpg-auth`,
+scoped `readWrite` to `sweetrpg-auth` only) rather than the shared admin user. Once the document
+exists, the user must log out and back in through `auth-web` - the session's roles are only
+resolved once, at login.
+
+**`_id` must be inserted as a BSON UUID (Binary subtype 0x00), not a plain string.**
+`models.UserRole`'s `ID` field is `uuid.UUID` (`github.com/google/uuid`), and the Go driver's
+default codec marshals that type as `{"$binary": {"base64": "...", "subType": "00"}}` - the raw
+16 bytes, base64-encoded - not the human-readable `xxxxxxxx-xxxx-...` string form. A document
+inserted with `_id` as a string decodes with `error decoding key _id: cannot decode string into
+an array`, which surfaces to every login attempt as `auth-web`'s generic "Login is temporarily
+unavailable" error. Hit this exactly once, 2026-08-08 (the day after the migration above), on the
+very bootstrap document the migration note above says to create - built the correct BSON value
+with:
+
+```go
+id, _ := uuid.Parse("<uuid-string>")
+b, _ := bson.MarshalExtJSON(struct{ ID uuid.UUID `bson:"_id"` }{ID: id}, false, false)
+// b contains the {"$binary": {...}} form to use as `_id` in the inserted document
+```
+
+Same applies to `models.ServiceDenyEntry` and `models.AuditLog` - both also key `_id` on
+`uuid.UUID`.
 
 ## Deployment
 
