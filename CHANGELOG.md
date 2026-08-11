@@ -1,3 +1,40 @@
+## [0.3.0] - 2026-08-11
+
+### 🚀 Features
+
+- Gate continuous profiling behind the profiling-enabled feature flag
+
+### 🐛 Bug Fixes
+
+- *(ci)* Scope Docker Build's concurrency group by ref
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.2.1
+## [0.2.1] - 2026-08-07
+
+### 📚 Documentation
+
+- Document first-admin bootstrapping and correct Service hostname
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.2.0
+## [0.2.0] - 2026-08-07
+
+### 🚀 Features
+
+- Scaffold Go rewrite of auth-api
+
+### 🐛 Bug Fixes
+
+- Log the real reason for a /authz/check verification failure
+- Check resp.Body.Close() error to satisfy golangci-lint errcheck
+
+### ⚙️ Miscellaneous Tasks
+
+- Switch auth-api to the Go build (CI, Dockerfile, Kubernetes)
+- *(release)* Merge master into develop after v0.1.2
 ## [0.1.2] - 2026-08-07
 
 ### 🐛 Bug Fixes
