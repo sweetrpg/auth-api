@@ -1,3 +1,16 @@
+## [0.3.0] - 2026-08-11
+
+### 🚀 Features
+
+- Gate continuous profiling behind the profiling-enabled feature flag
+
+### 🐛 Bug Fixes
+
+- *(ci)* Scope Docker Build's concurrency group by ref
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.2.1
 ## [0.2.1] - 2026-08-07
 
 ### 📚 Documentation
