@@ -26,6 +26,9 @@ spec:
                 package: auth
                 component: api
                 version: v1
+            annotations:
+                openfeature.dev/enabled: "true"
+                openfeature.dev/featureflagsource: "sweetrpg-system/auth-api"
         spec:
             serviceAccountName: api
             enableServiceLinks: false

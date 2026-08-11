@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -19,6 +20,7 @@ import (
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	apiconstants "github.com/sweetrpg/api-core.go/constants"
+	"github.com/sweetrpg/api-core.go/featureflags"
 	"github.com/sweetrpg/api-core.go/tracing"
 	"github.com/sweetrpg/api-core.go/vo"
 	"github.com/sweetrpg/auth-api/auth0"
@@ -48,7 +50,9 @@ func main() {
 
 	setupSentry()
 
-	if stopProfiling := setupProfiling(); stopProfiling != nil {
+	ff := featureflags.New(constants.ServiceName)
+
+	if stopProfiling := setupProfiling(ff); stopProfiling != nil {
 		defer stopProfiling()
 	}
 
@@ -159,12 +163,22 @@ func setupSentry() {
 	}
 }
 
-func setupProfiling() func() {
+// setupProfiling starts continuous profiling only when the profiling-enabled
+// feature flag evaluates to true, regardless of whether
+// PYROSCOPE_SERVER_ADDRESS happens to be set - the flag is the on/off
+// control, PYROSCOPE_SERVER_ADDRESS is only the destination. See the
+// pyroscope-profiling-flag spec's three scenarios.
+func setupProfiling(ff *featureflags.Client) func() {
 	logging.Logger.Info("Setting up continuous profiling...")
+
+	if !ff.BoolFlag(context.Background(), constants.ProfilingEnabledFlag, false) {
+		logging.Logger.Info("profiling-enabled flag is off, continuous profiling disabled")
+		return nil
+	}
 
 	serverAddress, found := os.LookupEnv(constants.PYROSCOPE_SERVER_ADDRESS)
 	if !found {
-		logging.Logger.Warn("PYROSCOPE_SERVER_ADDRESS not set, continuous profiling disabled")
+		logging.Logger.Warn("profiling-enabled flag is on but PYROSCOPE_SERVER_ADDRESS not set, continuous profiling disabled")
 		return nil
 	}
 
