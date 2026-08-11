@@ -46,8 +46,8 @@ had a Fluent relation to `User` that couldn't survive the split).
 
 ### Internal service auth (`admin-web` → `RolesController`)
 
-`RolesController`'s `/api/admin/*` routes accept `X-Internal-Service-Token` (matching the
-`INTERNAL_SERVICE_TOKEN` env var, see `InternalServiceAuth.swift`) as an alternative to an Auth0
+`server/roles.go`'s `/api/admin/*` routes accept `X-Internal-Service-Token` (matching the
+`INTERNAL_SERVICE_TOKEN` env var, see `server/internal_auth_test.go`) as an alternative to an Auth0
 bearer token. `admin-web` uses this exclusively - it never holds an Auth0 access token (it reads
 `auth-web`'s shared session instead), so it can't present one to `/authz/check`'s or
 `RolesController`'s usual bearer-token path. Whoever holds this shared secret is trusted
