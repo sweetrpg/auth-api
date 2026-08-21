@@ -26,9 +26,14 @@ spec:
                 package: auth
                 component: api
                 version: v1
+                release: prometheus
             annotations:
+                reloader.stakater.com/auto: "true"
                 openfeature.dev/enabled: "true"
                 openfeature.dev/featureflagsource: "sweetrpg-system/auth-api"
+                prometheus.io/scrape: "true"
+                prometheus.io/path: '/metrics'
+                prometheus.io/port: '8000'
         spec:
             serviceAccountName: api
             enableServiceLinks: false
@@ -55,7 +60,7 @@ spec:
                           cpu: "20m"
                           memory: "55Mi"
                       limits:
-                          cpu: "1.0"
+                          cpu: "1"
                           memory: "512Mi"
                   livenessProbe:
                         httpGet:

@@ -11,3 +11,8 @@ data:
   BUILD_INFO_PATH: /app/config/build-info.json
   LOG_LEVEL: info
   # OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo-distributor.observability.svc.cluster.local:4318/
+  DB_SCHEME: mongodb
+  DB_HOST: mongodb.sweetrpg-db.svc.cluster.local
+  DB_USER: auth-api
+  DB_NAME: sweetrpg-auth
+  DB_OPTS: retryWrites=true&w=majority

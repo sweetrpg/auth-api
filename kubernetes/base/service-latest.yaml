@@ -1,0 +1,19 @@
+---
+kind: Service
+apiVersion: v1
+
+metadata:
+  name: api-v0
+
+spec:
+    selector:
+        app: api
+        version: v1
+        platform: sweetrpg
+        package: auth
+        component: api
+    type: ClusterIP
+    ports:
+        - name: http
+          port: 8000
+          targetPort: http
