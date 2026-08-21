@@ -7,3 +7,4 @@ resources:
   - configmaps.yaml
   - deployment.yaml
   - service.yaml
+  - service-latest.yaml
