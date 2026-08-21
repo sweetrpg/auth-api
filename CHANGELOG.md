@@ -1,3 +1,24 @@
+## [0.4.0] - 2026-08-21
+
+### 🚀 Features
+
+- *(local)* Add MongoDB database configuration to local overlay
+- *(kubernetes)* Add Prometheus metrics and service resources
+
+### 🐛 Bug Fixes
+
+- *(kubernetes)* Fix cpu resource limit quantity that never matched ArgoCD's applied manifest
+
+### 📚 Documentation
+
+- Describe the Go service instead of Vapor in README/AGENTS.md
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove Swift/Vapor source tree, no longer used
+- *(release)* Merge master into develop after v0.3.0
+- Add reloader annotation, pod monitor
+- Add license file
 ## [0.3.0] - 2026-08-11
 
 ### 🚀 Features
