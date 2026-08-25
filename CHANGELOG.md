@@ -1,3 +1,9 @@
+## [0.4.1] - 2026-08-25
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.4.0
+- Set GOMEMLIMIT and GOGC on auth-api deployment
 ## [0.4.0] - 2026-08-21
 
 ### 🚀 Features
