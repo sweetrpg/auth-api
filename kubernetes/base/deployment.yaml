@@ -52,6 +52,11 @@ spec:
                             name: api-db
                       - secretRef:
                             name: api-misc
+                  env:
+                      - name: GOMEMLIMIT
+                        value: "460MiB"
+                      - name: GOGC
+                        value: "100"
                   ports:
                       - containerPort: 8000
                         name: http
