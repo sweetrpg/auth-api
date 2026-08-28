@@ -7,11 +7,10 @@ metadata:
 
 spec:
     selector:
-        app: api
-        version: v1
-        platform: sweetrpg
-        package: auth
-        component: api
+        app.kubernetes.io/name: auth-api
+        app.kubernetes.io/version: v1
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: auth
     type: ClusterIP
     ports:
         - name: http

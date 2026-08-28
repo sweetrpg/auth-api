@@ -13,20 +13,11 @@ spec:
         type: RollingUpdate
     selector:
         matchLabels:
-            app: api
-            version: v1
-            platform: sweetrpg
-            package: auth
-            component: api
+            app.kubernetes.io/name: auth-api
+            app.kubernetes.io/version: v1
+            app.kubernetes.io/component: api
     template:
         metadata:
-            labels:
-                platform: sweetrpg
-                app: api
-                package: auth
-                component: api
-                version: v1
-                release: prometheus
             annotations:
                 reloader.stakater.com/auto: "true"
                 openfeature.dev/enabled: "true"
