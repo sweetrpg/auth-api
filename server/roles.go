@@ -204,7 +204,7 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddRole(ctx, subject, role); err != nil {
+			if err := models.AddRole(ctx, subject, role, actingUserSub); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -309,7 +309,7 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddDenyEntry(ctx, subject, req.Service); err != nil {
+			if err := models.AddDenyEntry(ctx, subject, req.Service, actingUserSub); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil

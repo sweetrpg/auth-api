@@ -15,10 +15,16 @@ import (
 // "Per-service access: default-allow + deny-list" decision. Keyed on the
 // Auth0 subject directly, same rationale as UserRole.
 type ServiceDenyEntry struct {
-	ID        uuid.UUID `bson:"_id" json:"id"`
-	Subject   string    `bson:"subject" json:"subject"`
-	Service   string    `bson:"service" json:"service"`
-	CreatedAt time.Time `bson:"createdAt" json:"createdAt"`
+	ID      uuid.UUID `bson:"_id" json:"id"`
+	Subject string    `bson:"subject" json:"subject"`
+	Service string    `bson:"service" json:"service"`
+	// Platform audit fields (PADR-0001). service_deny_entries are hard-delete security-control
+	// records (PADR-0027), so there is no deleted_* pair. A row is only ever added or removed,
+	// never updated in place, so updated_* always equals created_*.
+	CreatedBy string    `bson:"created_by" json:"created_by"`
+	CreatedAt time.Time `bson:"created_at" json:"created_at"`
+	UpdatedBy string    `bson:"updated_by" json:"updated_by"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
 
 // ListDenyEntriesForSubject returns every deny entry for subject.
@@ -43,10 +49,14 @@ func HasDenyEntry(ctx context.Context, subject, service string) (bool, error) {
 	return len(rows) > 0, nil
 }
 
-// AddDenyEntry inserts a new deny entry. Callers should check HasDenyEntry
-// first to keep the operation idempotent.
-func AddDenyEntry(ctx context.Context, subject, service string) error {
-	doc := ServiceDenyEntry{ID: uuid.New(), Subject: subject, Service: service, CreatedAt: time.Now().UTC()}
+// AddDenyEntry inserts a new deny entry attributed to actingUserID. Callers should check
+// HasDenyEntry first to keep the operation idempotent.
+func AddDenyEntry(ctx context.Context, subject, service, actingUserID string) error {
+	now := time.Now().UTC()
+	doc := ServiceDenyEntry{
+		ID: uuid.New(), Subject: subject, Service: service,
+		CreatedBy: actingUserID, CreatedAt: now, UpdatedBy: actingUserID, UpdatedAt: now,
+	}
 	_, err := database.Db.Collection(constants.ServiceDenyEntriesCollection).InsertOne(ctx, doc)
 	return err
 }
