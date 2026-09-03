@@ -1,3 +1,13 @@
+## [0.5.0] - 2026-09-03
+
+### 🚀 Features
+
+- Adopt audit-fields convention on user_roles and service_deny_entries
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.4.2
+- Update to standard labels
 ## [0.4.2] - 2026-08-25
 
 ### ⚙️ Miscellaneous Tasks
