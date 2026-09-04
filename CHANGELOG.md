@@ -1,3 +1,12 @@
+## [0.5.1] - 2026-09-04
+
+### 🐛 Bug Fixes
+
+- *(ratelimit)* Scope per caller, exempt health checks, raise default rate
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.5.0
 ## [0.5.0] - 2026-09-03
 
 ### 🚀 Features
