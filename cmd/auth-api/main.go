@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -242,18 +243,60 @@ func setupMetrics(r *gin.Engine) {
 	m.Use(r)
 }
 
+// exemptFromRateLimit lists paths that must never fail because unrelated
+// traffic exhausted the rate budget - a k8s liveness/readiness probe getting
+// 429'd here previously turned ordinary write load (e.g. a bulk import
+// driving catalog-api -> POST /authz/check per write) into a pod restart.
+var exemptFromRateLimit = map[string]bool{
+	"/status/ping":   true,
+	"/status/health": true,
+}
+
+// RateLimiter rate-limits per caller (client IP) rather than one bucket
+// shared by every request in the process - previously a single busy caller
+// (or a burst of legitimate internal traffic) exhausted the budget for every
+// other caller, including the service's own health checks.
+//
+// Defaults (5 req/s sustained, burst from RATE_LIMIT) are looser than the
+// old hardwired 1 req/s: every catalog-api write synchronously calls
+// /authz/check, so the previous rate turned any moderate write burst into a
+// cascade of 429s. Tune via RATE_LIMIT_PER_SECOND and RATE_LIMIT.
+//
+// limiters grows one entry per distinct client IP and is never pruned - fine
+// at the small, stable set of in-cluster caller IPs this service actually
+// sees; add idle-entry eviction if the caller set becomes large or unbounded
+// (e.g. this endpoint becomes directly internet-facing).
 func RateLimiter() gin.HandlerFunc {
-	limiter := rate.NewLimiter(1, util.GetEnvInt(apiconstants.RATE_LIMIT, 10))
+	rps := rate.Limit(util.GetEnvInt(constants.RATE_LIMIT_PER_SECOND, 5))
+	burst := util.GetEnvInt(apiconstants.RATE_LIMIT, 20)
+
+	var mu sync.Mutex
+	limiters := map[string]*rate.Limiter{}
+
+	limiterFor := func(key string) *rate.Limiter {
+		mu.Lock()
+		defer mu.Unlock()
+		l, ok := limiters[key]
+		if !ok {
+			l = rate.NewLimiter(rps, burst)
+			limiters[key] = l
+		}
+		return l
+	}
 
 	return func(c *gin.Context) {
-		if limiter.Allow() {
+		if exemptFromRateLimit[c.Request.URL.Path] {
 			c.Next()
-		} else {
-			logging.Logger.Warn("Rate limit exceeded")
-			c.JSON(429, vo.ErrorVO{
-				Error:   apiconstants.ErrorRateLimited,
-				Message: "Limit exceeded",
-			})
+			return
 		}
+		if limiterFor(c.ClientIP()).Allow() {
+			c.Next()
+			return
+		}
+		logging.Logger.Warn("Rate limit exceeded", "clientIP", c.ClientIP(), "path", c.Request.URL.Path)
+		c.JSON(429, vo.ErrorVO{
+			Error:   apiconstants.ErrorRateLimited,
+			Message: "Limit exceeded",
+		})
 	}
 }
