@@ -15,6 +15,10 @@ const (
 	// verifies bearer tokens against; see auth0.ConfigFromEnvironment.
 	AUTH0_DOMAIN   = "AUTH0_DOMAIN"
 	AUTH0_AUDIENCE = "AUTH0_AUDIENCE"
+
+	// RATE_LIMIT_PER_SECOND is the sustained per-caller request rate for
+	// main.RateLimiter; api-core.go's RATE_LIMIT env var supplies the burst.
+	RATE_LIMIT_PER_SECOND = "RATE_LIMIT_PER_SECOND"
 )
 
 // Value constants
