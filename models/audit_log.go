@@ -26,12 +26,14 @@ const (
 // Written *before* the mutation is attempted (status "attempted") and
 // updated *after* it completes - see RecordAuditAttempt and CompleteAudit.
 // If the "before" write fails, the mutation must not be performed: an audit
-// trail that can silently fail to exist is not an audit trail. Both
-// ActingUserSub and TargetSubject are raw Auth0 sub strings, not foreign
-// keys - auth-api holds no profile data to key against.
+// trail that can silently fail to exist is not an audit trail.
+// ActingUserID is the canonical users._id of the acting admin (resolved from
+// their Auth0 subject at the request boundary). TargetSubject remains the
+// raw Auth0 sub of the user being modified - that is the identity being
+// authorized, not the acting user.
 type AdminActionAuditLog struct {
 	ID            uuid.UUID   `bson:"_id" json:"id"`
-	ActingUserSub string      `bson:"actingUserSub" json:"actingUserSub"`
+	ActingUserID  string      `bson:"acting_user_id" json:"acting_user_id"`
 	Action        string      `bson:"action" json:"action"`
 	TargetSubject string      `bson:"targetSubject" json:"targetSubject"`
 	Detail        string      `bson:"detail" json:"detail"`
@@ -45,10 +47,10 @@ type AdminActionAuditLog struct {
 // mutation before the mutation itself runs. Returns the record's ID for a
 // later CompleteAudit call. Callers must not perform the mutation if this
 // returns an error.
-func RecordAuditAttempt(ctx context.Context, actingUserSub, action, targetSubject, detail string) (uuid.UUID, error) {
+func RecordAuditAttempt(ctx context.Context, actingUserID, action, targetSubject, detail string) (uuid.UUID, error) {
 	entry := AdminActionAuditLog{
 		ID:            uuid.New(),
-		ActingUserSub: actingUserSub,
+		ActingUserID:  actingUserID,
 		Action:        action,
 		TargetSubject: targetSubject,
 		Detail:        detail,

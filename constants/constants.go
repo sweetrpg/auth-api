@@ -19,6 +19,10 @@ const (
 	// RATE_LIMIT_PER_SECOND is the sustained per-caller request rate for
 	// main.RateLimiter; api-core.go's RATE_LIMIT env var supplies the burst.
 	RATE_LIMIT_PER_SECOND = "RATE_LIMIT_PER_SECOND"
+
+	// USERS_API_URL is the base URL for users-api, used to resolve Auth0
+	// subjects to canonical users._id for audit attribution.
+	USERS_API_URL = "USERS_API_URL"
 )
 
 // Value constants

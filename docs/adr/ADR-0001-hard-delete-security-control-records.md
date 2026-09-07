@@ -51,16 +51,21 @@ platform.
 `updated_*` equals `created_*`) but **no `deleted_at` / `deleted_by` pair**, and there is no
 `{deleted_at: nil}` read filter.
 
-`created_by` / `updated_by` are stamped from the verified acting subject (the admin performing
-the grant) on `AddRole` / `AddDenyEntry`.
+`created_by` / `updated_by` on `user_roles` and `service_deny_entries` are stamped from the
+canonical `users._id` of the acting admin (resolved from their Auth0 subject at the request
+boundary via `users-api` / `POST /internal/resolve-subjects`). The `subject` field in these
+collections remains the Auth0 subject — that is the identity being authorized, not the acting
+user.
 
 The "who revoked this access and when" record that hard delete gives up is retained by the
 **`admin_action_audit_logs`** collection: every add and remove of a role or deny entry goes
 through `performAudited` → `RecordAuditAttempt`, written *before* the mutation (the mutation is
-refused if the audit write fails), capturing the acting user, the action (`remove_role` /
-`remove_deny_entry`), the target subject, and the timestamp. `CompleteAudit` then transitions
-that same row to `succeeded` / `failed` — a status transition by the audit protocol itself, not
-a mutation of the who/what/when. No other application path updates or deletes an audit row.
+refused if the audit write fails), capturing the acting user's canonical `users._id` (field
+`acting_user_id`), the action (`add_role` / `remove_role` / `add_deny_entry` /
+`remove_deny_entry`), the target subject (field `targetSubject`, still the raw Auth0 `sub`), and
+the timestamp. `CompleteAudit` then transitions that same row to `succeeded` / `failed` — a
+status transition by the audit protocol itself, not a mutation of the who/what/when. No other
+application path updates or deletes an audit row.
 
 ## Consequences
 
