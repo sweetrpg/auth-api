@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -13,6 +16,7 @@ import (
 	"github.com/sweetrpg/auth-api/auth0"
 	"github.com/sweetrpg/auth-api/constants"
 	"github.com/sweetrpg/auth-api/models"
+	"github.com/sweetrpg/authz-client.go/authz"
 	"github.com/sweetrpg/common.go/logging"
 	"github.com/sweetrpg/common.go/util"
 )
@@ -42,13 +46,16 @@ type denyEntryRequest struct {
 func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) {
 	logging.Logger.Info("Setting up admin roles endpoint handlers...")
 
+	usersBaseURL := util.GetEnv(constants.USERS_API_URL, "")
+	authzClient := authz.NewClient("", usersBaseURL)
+
 	group := g.Group("/api/admin")
 	group.GET("/roles", func(c *gin.Context) { listRoles(c, cache, config) })
 	group.GET("/roles/:subject", func(c *gin.Context) { getSubject(c, cache, config) })
-	group.POST("/roles/:subject", func(c *gin.Context) { addRole(c, cache, config) })
-	group.DELETE("/roles/:subject/:role", func(c *gin.Context) { removeRole(c, cache, config) })
-	group.POST("/deny-entries/:subject", func(c *gin.Context) { addDenyEntry(c, cache, config) })
-	group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) { removeDenyEntry(c, cache, config) })
+	group.POST("/roles/:subject", func(c *gin.Context) { addRole(c, cache, config, authzClient, usersBaseURL) })
+	group.DELETE("/roles/:subject/:role", func(c *gin.Context) { removeRole(c, cache, config, authzClient, usersBaseURL) })
+	group.POST("/deny-entries/:subject", func(c *gin.Context) { addDenyEntry(c, cache, config, authzClient, usersBaseURL) })
+	group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) { removeDenyEntry(c, cache, config, authzClient, usersBaseURL) })
 }
 
 // GET /api/admin/roles?subjects=sub1,sub2,... - bulk roles/deny-entries for
@@ -70,7 +77,7 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/roles [get]
 func listRoles(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	if _, ok := verifyAdminRole(c, cache, config); !ok {
+	if _, _, ok := verifyAdminRole(c, cache, config); !ok {
 		return
 	}
 
@@ -111,7 +118,7 @@ func listRoles(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/roles/{subject} [get]
 func getSubject(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	if _, ok := verifyAdminRole(c, cache, config); !ok {
+	if _, _, ok := verifyAdminRole(c, cache, config); !ok {
 		return
 	}
 
@@ -173,9 +180,15 @@ func buildSummary(ctx context.Context, subject string) (subjectRolesSummary, err
 //		@Failure		403							{object}	apiv.ErrorVO
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/roles/{subject} [post]
-func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	actingUserSub, ok := verifyAdminRole(c, cache, config)
+func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzClient *authz.Client, usersBaseURL string) {
+	actingUserSub, token, ok := verifyAdminRole(c, cache, config)
 	if !ok {
+		return
+	}
+
+	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
 
@@ -195,7 +208,7 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserSub, "add_role", subject, string(role),
+	status, err := performAudited(c.Request.Context(), actingUserID, "add_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
 			exists, err := models.HasRole(ctx, subject, role)
 			if err != nil {
@@ -204,7 +217,7 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddRole(ctx, subject, role, actingUserSub); err != nil {
+			if err := models.AddRole(ctx, subject, role, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -233,9 +246,15 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 //		@Failure		403							{object}	apiv.ErrorVO
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/roles/{subject}/{role} [delete]
-func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	actingUserSub, ok := verifyAdminRole(c, cache, config)
+func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzClient *authz.Client, usersBaseURL string) {
+	actingUserSub, token, ok := verifyAdminRole(c, cache, config)
 	if !ok {
+		return
+	}
+
+	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
 
@@ -250,7 +269,7 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserSub, "remove_role", subject, string(role),
+	status, err := performAudited(c.Request.Context(), actingUserID, "remove_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
 			if err := models.RemoveRole(ctx, subject, role); err != nil {
 				return 0, err
@@ -283,9 +302,15 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 //		@Failure		403							{object}	apiv.ErrorVO
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/deny-entries/{subject} [post]
-func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	actingUserSub, ok := verifyAdminRole(c, cache, config)
+func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzClient *authz.Client, usersBaseURL string) {
+	actingUserSub, token, ok := verifyAdminRole(c, cache, config)
 	if !ok {
+		return
+	}
+
+	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
 
@@ -300,7 +325,7 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserSub, "add_deny_entry", subject, req.Service,
+	status, err := performAudited(c.Request.Context(), actingUserID, "add_deny_entry", subject, req.Service,
 		func(ctx context.Context) (int, error) {
 			exists, err := models.HasDenyEntry(ctx, subject, req.Service)
 			if err != nil {
@@ -309,7 +334,7 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddDenyEntry(ctx, subject, req.Service, actingUserSub); err != nil {
+			if err := models.AddDenyEntry(ctx, subject, req.Service, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -338,9 +363,15 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 //		@Failure		403							{object}	apiv.ErrorVO
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/deny-entries/{subject}/{service} [delete]
-func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	actingUserSub, ok := verifyAdminRole(c, cache, config)
+func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzClient *authz.Client, usersBaseURL string) {
+	actingUserSub, token, ok := verifyAdminRole(c, cache, config)
 	if !ok {
+		return
+	}
+
+	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
 
@@ -355,7 +386,7 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserSub, "remove_deny_entry", subject, service,
+	status, err := performAudited(c.Request.Context(), actingUserID, "remove_deny_entry", subject, service,
 		func(ctx context.Context) (int, error) {
 			if err := models.RemoveDenyEntry(ctx, subject, service); err != nil {
 				return 0, err
@@ -417,7 +448,7 @@ func performAuditedWith(
 	return status, nil
 }
 
-// verifyAdminRole resolves the acting user's subject, or writes an error
+// verifyAdminRole resolves the acting user's subject and bearer token, or writes an error
 // response and returns ok=false. Trusts a valid X-Internal-Service-Token
 // outright (see hasValidInternalServiceToken for why admin-web uses this
 // instead of an Auth0 bearer token) but still requires an
@@ -425,33 +456,33 @@ func performAuditedWith(
 // every mutating route needs that for its audit log. Falls through to
 // verifying an Auth0 bearer token's admin role otherwise, using the
 // verified token's own subject as the acting user.
-func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, bool) {
+func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, string, bool) {
 	if hasValidInternalServiceToken(c) {
 		actingUserSub := c.GetHeader(actingUserSubHeader)
 		if actingUserSub == "" {
 			c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "X-Acting-User-Sub header is required"})
-			return "", false
+			return "", "", false
 		}
-		return actingUserSub, true
+		return actingUserSub, "", true
 	}
 
 	token := bearerToken(c)
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
-		return "", false
+		return "", "", false
 	}
 
 	claims, err := cache.Verify(c.Request.Context(), token, config)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
-		return "", false
+		return "", "", false
 	}
 
 	roles, err := models.ListRolesForSubject(c.Request.Context(), claims.Subject)
 	if err != nil {
 		logging.Logger.Error("Failed to look up roles", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to verify admin role"})
-		return "", false
+		return "", "", false
 	}
 	hasAdmin := false
 	for _, r := range roles {
@@ -462,9 +493,9 @@ func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 	}
 	if !hasAdmin {
 		c.JSON(http.StatusForbidden, apiv.ErrorVO{Error: "forbidden", Message: "admin role required"})
-		return "", false
+		return "", "", false
 	}
-	return claims.Subject, true
+	return claims.Subject, token, true
 }
 
 // hasValidInternalServiceToken reports whether the request presented the
@@ -479,4 +510,69 @@ func hasValidInternalServiceToken(c *gin.Context) bool {
 	}
 	presented := c.GetHeader(internalServiceTokenHeader)
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(presented)) == 1
+}
+
+// resolveActingUser resolves the acting user's Auth0 subject to their canonical
+// users._id. For bearer-token callers, uses authzClient.ResolveUserID. For
+// internal-service-token callers, calls users-api's /internal/resolve-subjects
+// with the provided subject. Returns an error if resolution fails or returns
+// empty, so the caller can fail closed.
+func resolveActingUser(ctx context.Context, authzClient *authz.Client, usersBaseURL, actingUserSub, token string) (string, error) {
+	if token != "" {
+		userID := authzClient.ResolveUserID(ctx, token)
+		if userID == "" {
+			return "", fmt.Errorf("resolveActingUser: bearer token resolved to empty user ID")
+		}
+		return userID, nil
+	}
+
+	// Internal service token path: call users-api's /internal/resolve-subjects
+	if usersBaseURL == "" {
+		return "", fmt.Errorf("resolveActingUser: USERS_API_URL not configured")
+	}
+
+	// Use the same internal service token that auth-api uses for its own auth
+	internalToken := util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "")
+	if internalToken == "" {
+		return "", fmt.Errorf("resolveActingUser: INTERNAL_SERVICE_TOKEN not configured")
+	}
+
+	type resolveRequest struct {
+		Subjects []string `json:"subjects"`
+	}
+	type resolveResponse map[string]string
+
+	body, err := json.Marshal(resolveRequest{Subjects: []string{actingUserSub}})
+	if err != nil {
+		return "", fmt.Errorf("resolveActingUser: marshal request: %w", err)
+	}
+
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, usersBaseURL+"/internal/resolve-subjects", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("resolveActingUser: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+internalToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("resolveActingUser: request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("resolveActingUser: unexpected status %d from users-api", resp.StatusCode)
+	}
+
+	var out resolveResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("resolveActingUser: decode response: %w", err)
+	}
+
+	userID := out[actingUserSub]
+	if userID == "" {
+		return "", fmt.Errorf("resolveActingUser: subject not resolved")
+	}
+	return userID, nil
 }
