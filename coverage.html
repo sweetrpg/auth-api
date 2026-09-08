@@ -71,7 +71,7 @@
 				
 				<option value="file7">github.com/sweetrpg/auth-api/models/role.go (0.0%)</option>
 				
-				<option value="file8">github.com/sweetrpg/auth-api/models/service_deny_entry.go (0.0%)</option>
+				<option value="file8">github.com/sweetrpg/auth-api/models/service_deny_entry.go (46.7%)</option>
 				
 				<option value="file9">github.com/sweetrpg/auth-api/models/user_role.go (0.0%)</option>
 				
@@ -79,7 +79,7 @@
 				
 				<option value="file11">github.com/sweetrpg/auth-api/server/handlers.go (0.0%)</option>
 				
-				<option value="file12">github.com/sweetrpg/auth-api/server/roles.go (15.2%)</option>
+				<option value="file12">github.com/sweetrpg/auth-api/server/roles.go (16.2%)</option>
 				
 				<option value="file13">github.com/sweetrpg/auth-api/server/status.go (0.0%)</option>
 				
@@ -1003,6 +1003,58 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/admin/deny-entries/stats": {
+            "get": {
+                "description": "Number of distinct subjects with at least one active service deny entry",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Count of restricted users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/server.denyEntryStatsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/deny-entries/{subject}": {
             "post": {
                 "description": "Deny a subject access to a service",
@@ -1564,6 +1616,14 @@ const docTemplate = `{
                 }
             }
         },
+        "server.denyEntryStatsResponse": {
+            "type": "object",
+            "properties": {
+                "restricted_users": {
+                    "type": "integer"
+                }
+            }
+        },
         "server.roleAssignmentRequest": {
             "type": "object",
             "required": [
@@ -1805,6 +1865,19 @@ type ServiceDenyEntry struct {
         UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
 
+// CountRestrictedSubjects returns the number of distinct subjects with at least one deny entry.
+// service_deny_entries are hard-delete records (PADR-0027), so every row is an active
+// restriction - no status filter is needed. A subject with deny entries for several services is
+// counted once.
+func CountRestrictedSubjects(ctx context.Context) (int, error) <span class="cov6" title="2">{
+        subjects, err := database.Db.Collection(constants.ServiceDenyEntriesCollection).
+                Distinct(ctx, "subject", bson.D{})
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, err
+        }</span>
+        <span class="cov6" title="2">return len(subjects), nil</span>
+}
+
 // ListDenyEntriesForSubject returns every deny entry for subject.
 func ListDenyEntriesForSubject(ctx context.Context, subject string) ([]*ServiceDenyEntry, error) <span class="cov0" title="0">{
         return database.Query[ServiceDenyEntry](
@@ -1829,7 +1902,7 @@ func HasDenyEntry(ctx context.Context, subject, service string) (bool, error) <s
 
 // AddDenyEntry inserts a new deny entry attributed to actingUserID. Callers should check
 // HasDenyEntry first to keep the operation idempotent.
-func AddDenyEntry(ctx context.Context, subject, service, actingUserID string) error <span class="cov0" title="0">{
+func AddDenyEntry(ctx context.Context, subject, service, actingUserID string) error <span class="cov10" title="3">{
         now := time.Now().UTC()
         doc := ServiceDenyEntry{
                 ID: uuid.New(), Subject: subject, Service: service,
@@ -2036,10 +2109,10 @@ func invalidTokenResponse(c *gin.Context) <span class="cov0" title="0">{
         c.JSON(http.StatusUnauthorized, authzErrorResponse{Error: "invalid_token"})
 }</span>
 
-func bearerToken(c *gin.Context) string <span class="cov8" title="1">{
+func bearerToken(c *gin.Context) string <span class="cov10" title="3">{
         const prefix = "Bearer "
         auth := c.GetHeader("Authorization")
-        if len(auth) &lt;= len(prefix) || auth[:len(prefix)] != prefix </span><span class="cov8" title="1">{
+        if len(auth) &lt;= len(prefix) || auth[:len(prefix)] != prefix </span><span class="cov10" title="3">{
                 return ""
         }</span>
         <span class="cov0" title="0">return auth[len(prefix):]</span>
@@ -2105,7 +2178,7 @@ type denyEntryRequest struct {
 // auth-api has no user list of its own to serve (no email, no profile data)
 // - admin-web composes users-api's user list with the bulk lookup here
 // (GET /api/admin/roles?subjects=...), joined by Auth0 subject.
-func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) <span class="cov4" title="2">{
+func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) <span class="cov7" title="5">{
         logging.Logger.Info("Setting up admin roles endpoint handlers...")
 
         usersBaseURL := util.GetEnv(constants.USERS_API_URL, "")
@@ -2113,11 +2186,48 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 
         group := g.Group("/api/admin")
         group.GET("/roles", func(c *gin.Context) </span><span class="cov0" title="0">{ listRoles(c, cache, config) }</span>)
-        <span class="cov4" title="2">group.GET("/roles/:subject", func(c *gin.Context) </span><span class="cov0" title="0">{ getSubject(c, cache, config) }</span>)
-        <span class="cov4" title="2">group.POST("/roles/:subject", func(c *gin.Context) </span><span class="cov4" title="2">{ addRole(c, cache, config, authzClient, usersBaseURL) }</span>)
-        <span class="cov4" title="2">group.DELETE("/roles/:subject/:role", func(c *gin.Context) </span><span class="cov0" title="0">{ removeRole(c, cache, config, authzClient, usersBaseURL) }</span>)
-        <span class="cov4" title="2">group.POST("/deny-entries/:subject", func(c *gin.Context) </span><span class="cov0" title="0">{ addDenyEntry(c, cache, config, authzClient, usersBaseURL) }</span>)
-        <span class="cov4" title="2">group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) </span><span class="cov0" title="0">{ removeDenyEntry(c, cache, config, authzClient, usersBaseURL) }</span>)
+        <span class="cov7" title="5">group.GET("/roles/:subject", func(c *gin.Context) </span><span class="cov0" title="0">{ getSubject(c, cache, config) }</span>)
+        <span class="cov7" title="5">group.POST("/roles/:subject", func(c *gin.Context) </span><span class="cov3" title="2">{ addRole(c, cache, config, authzClient, usersBaseURL) }</span>)
+        <span class="cov7" title="5">group.DELETE("/roles/:subject/:role", func(c *gin.Context) </span><span class="cov0" title="0">{ removeRole(c, cache, config, authzClient, usersBaseURL) }</span>)
+        // Static /deny-entries/stats is registered before the /deny-entries/:subject param route so
+        // "stats" is never captured as a subject.
+        <span class="cov7" title="5">group.GET("/deny-entries/stats", func(c *gin.Context) </span><span class="cov5" title="3">{ denyEntryStats(c, cache, config) }</span>)
+        <span class="cov7" title="5">group.POST("/deny-entries/:subject", func(c *gin.Context) </span><span class="cov0" title="0">{ addDenyEntry(c, cache, config, authzClient, usersBaseURL) }</span>)
+        <span class="cov7" title="5">group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) </span><span class="cov0" title="0">{ removeDenyEntry(c, cache, config, authzClient, usersBaseURL) }</span>)
+}
+
+type denyEntryStatsResponse struct {
+        RestrictedUsers int `json:"restricted_users"`
+}
+
+// Count of users with at least one service restriction.
+//
+//         The number of distinct subjects with one or more service deny entries, for admin-web's
+//         platform metrics page. Plain JSON, not JSON:API. Requires the internal service token, or an
+//         Auth0 bearer token with the admin role.
+//                @Summary                Count of restricted users
+//                @Description        Number of distinct subjects with at least one active service deny entry
+//                @Tags                        admin
+//                @Produce                json
+//                @Param                        X-Internal-Service-Token        header                string        false        "Shared internal-service secret"
+//                @Param                        X-Acting-User-Sub                        header                string        false        "Acting admin's Auth0 sub"
+//                @Success                200                                                        {object}        denyEntryStatsResponse
+//                @Failure                401                                                        {object}        apiv.ErrorVO
+//                @Failure                403                                                        {object}        apiv.ErrorVO
+//                @Failure                500                                                        {object}        apiv.ErrorVO
+//                @Router                        /api/admin/deny-entries/stats [get]
+func denyEntryStats(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) <span class="cov5" title="3">{
+        if _, _, ok := verifyAdminRole(c, cache, config); !ok </span><span class="cov5" title="3">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">count, err := models.CountRestrictedSubjects(c.Request.Context())
+        if err != nil </span><span class="cov0" title="0">{
+                logging.Logger.Error("Failed to count restricted subjects", "error", err.Error())
+                c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to count restricted users"})
+                return
+        }</span>
+        <span class="cov0" title="0">c.JSON(http.StatusOK, denyEntryStatsResponse{RestrictedUsers: count})</span>
 }
 
 // GET /api/admin/roles?subjects=sub1,sub2,... - bulk roles/deny-entries for
@@ -2242,9 +2352,9 @@ func buildSummary(ctx context.Context, subject string) (subjectRolesSummary, err
 //                @Failure                403                                                        {object}        apiv.ErrorVO
 //                @Failure                500                                                        {object}        apiv.ErrorVO
 //                @Router                        /api/admin/roles/{subject} [post]
-func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzClient *authz.Client, usersBaseURL string) <span class="cov4" title="2">{
+func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzClient *authz.Client, usersBaseURL string) <span class="cov3" title="2">{
         actingUserSub, token, ok := verifyAdminRole(c, cache, config)
-        if !ok </span><span class="cov4" title="2">{
+        if !ok </span><span class="cov3" title="2">{
                 return
         }</span>
 
@@ -2489,14 +2599,14 @@ func performAuditedWith(
         operation func(context.Context) (int, error),
         recordAttempt func(context.Context, string, string, string, string) (uuid.UUID, error),
         complete func(context.Context, uuid.UUID, models.AuditStatus, string) error,
-) (int, error) <span class="cov6" title="3">{
+) (int, error) <span class="cov5" title="3">{
         auditID, err := recordAttempt(ctx, actingUserSub, action, targetSubject, detail)
         if err != nil </span><span class="cov1" title="1">{
                 logging.Logger.Error("Refusing to perform admin action - audit log write failed", "action", action, "error", err.Error())
                 return 0, fmt.Errorf("could not record audit log; action not performed: %w", err)
         }</span>
 
-        <span class="cov4" title="2">status, opErr := operation(ctx)
+        <span class="cov3" title="2">status, opErr := operation(ctx)
         if opErr != nil </span><span class="cov1" title="1">{
                 if err := complete(ctx, auditID, models.AuditFailed, opErr.Error()); err != nil </span><span class="cov0" title="0">{
                         logging.Logger.Warn("Failed to record failure for audit log", "auditID", auditID, "error", err.Error())
@@ -2518,18 +2628,18 @@ func performAuditedWith(
 // every mutating route needs that for its audit log. Falls through to
 // verifying an Auth0 bearer token's admin role otherwise, using the
 // verified token's own subject as the acting user.
-func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, string, bool) <span class="cov4" title="2">{
-        if hasValidInternalServiceToken(c) </span><span class="cov1" title="1">{
+func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, string, bool) <span class="cov7" title="5">{
+        if hasValidInternalServiceToken(c) </span><span class="cov3" title="2">{
                 actingUserSub := c.GetHeader(actingUserSubHeader)
-                if actingUserSub == "" </span><span class="cov1" title="1">{
+                if actingUserSub == "" </span><span class="cov3" title="2">{
                         c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "X-Acting-User-Sub header is required"})
                         return "", "", false
                 }</span>
                 <span class="cov0" title="0">return actingUserSub, "", true</span>
         }
 
-        <span class="cov1" title="1">token := bearerToken(c)
-        if token == "" </span><span class="cov1" title="1">{
+        <span class="cov5" title="3">token := bearerToken(c)
+        if token == "" </span><span class="cov5" title="3">{
                 c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
                 return "", "", false
         }</span>
@@ -2565,12 +2675,12 @@ func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 // INTERNAL_SERVICE_TOKEN. Always false when INTERNAL_SERVICE_TOKEN is unset
 // - the internal-auth path is then permanently disabled rather than
 // trusting an empty token.
-func hasValidInternalServiceToken(c *gin.Context) bool <span class="cov10" title="6">{
+func hasValidInternalServiceToken(c *gin.Context) bool <span class="cov10" title="9">{
         expected := util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "")
-        if expected == "" </span><span class="cov1" title="1">{
+        if expected == "" </span><span class="cov3" title="2">{
                 return false
         }</span>
-        <span class="cov9" title="5">presented := c.GetHeader(internalServiceTokenHeader)
+        <span class="cov8" title="7">presented := c.GetHeader(internalServiceTokenHeader)
         return subtle.ConstantTimeCompare([]byte(expected), []byte(presented)) == 1</span>
 }
 
