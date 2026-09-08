@@ -54,8 +54,45 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 	group.GET("/roles/:subject", func(c *gin.Context) { getSubject(c, cache, config) })
 	group.POST("/roles/:subject", func(c *gin.Context) { addRole(c, cache, config, authzClient, usersBaseURL) })
 	group.DELETE("/roles/:subject/:role", func(c *gin.Context) { removeRole(c, cache, config, authzClient, usersBaseURL) })
+	// Static /deny-entries/stats is registered before the /deny-entries/:subject param route so
+	// "stats" is never captured as a subject.
+	group.GET("/deny-entries/stats", func(c *gin.Context) { denyEntryStats(c, cache, config) })
 	group.POST("/deny-entries/:subject", func(c *gin.Context) { addDenyEntry(c, cache, config, authzClient, usersBaseURL) })
 	group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) { removeDenyEntry(c, cache, config, authzClient, usersBaseURL) })
+}
+
+type denyEntryStatsResponse struct {
+	RestrictedUsers int `json:"restricted_users"`
+}
+
+// Count of users with at least one service restriction.
+//
+//	 The number of distinct subjects with one or more service deny entries, for admin-web's
+//	 platform metrics page. Plain JSON, not JSON:API. Requires the internal service token, or an
+//	 Auth0 bearer token with the admin role.
+//		@Summary		Count of restricted users
+//		@Description	Number of distinct subjects with at least one active service deny entry
+//		@Tags			admin
+//		@Produce		json
+//		@Param			X-Internal-Service-Token	header		string	false	"Shared internal-service secret"
+//		@Param			X-Acting-User-Sub			header		string	false	"Acting admin's Auth0 sub"
+//		@Success		200							{object}	denyEntryStatsResponse
+//		@Failure		401							{object}	apiv.ErrorVO
+//		@Failure		403							{object}	apiv.ErrorVO
+//		@Failure		500							{object}	apiv.ErrorVO
+//		@Router			/api/admin/deny-entries/stats [get]
+func denyEntryStats(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
+	if _, _, ok := verifyAdminRole(c, cache, config); !ok {
+		return
+	}
+
+	count, err := models.CountRestrictedSubjects(c.Request.Context())
+	if err != nil {
+		logging.Logger.Error("Failed to count restricted subjects", "error", err.Error())
+		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to count restricted users"})
+		return
+	}
+	c.JSON(http.StatusOK, denyEntryStatsResponse{RestrictedUsers: count})
 }
 
 // GET /api/admin/roles?subjects=sub1,sub2,... - bulk roles/deny-entries for
