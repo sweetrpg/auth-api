@@ -1,3 +1,17 @@
+## [0.6.0] - 2026-09-08
+
+### 🚀 Features
+
+- *(auth-api)* Resolve canonical user IDs for admin writes
+- *(admin)* Add GET /api/admin/deny-entries/stats restricted-user count
+
+### 🐛 Bug Fixes
+
+- Increase refresh interval
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.5.1
 ## [0.5.1] - 2026-09-04
 
 ### 🐛 Bug Fixes
