@@ -10,4 +10,7 @@ permissions:
 jobs:
   ci:
     uses: sweetrpg/github-actions/.github/workflows/go-ci.yaml@master
+    with:
+      mongodb-version: "7.0"
+      test-env: '{"DB_URI": "mongodb://localhost:27017/auth-api-ci"}'
     secrets: inherit

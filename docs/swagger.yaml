@@ -38,6 +38,11 @@ definitions:
     required:
     - service
     type: object
+  server.denyEntryStatsResponse:
+    properties:
+      restricted_users:
+        type: integer
+    type: object
   server.roleAssignmentRequest:
     properties:
       role:
@@ -193,6 +198,41 @@ paths:
           schema:
             $ref: '#/definitions/vo.ErrorVO'
       summary: Remove a subject's service deny entry
+      tags:
+      - admin
+  /api/admin/deny-entries/stats:
+    get:
+      description: Number of distinct subjects with at least one active service deny
+        entry
+      parameters:
+      - description: Shared internal-service secret
+        in: header
+        name: X-Internal-Service-Token
+        type: string
+      - description: Acting admin's Auth0 sub
+        in: header
+        name: X-Acting-User-Sub
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/server.denyEntryStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/vo.ErrorVO'
+      summary: Count of restricted users
       tags:
       - admin
   /api/admin/roles:

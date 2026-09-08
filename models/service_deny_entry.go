@@ -27,6 +27,19 @@ type ServiceDenyEntry struct {
 	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
 
+// CountRestrictedSubjects returns the number of distinct subjects with at least one deny entry.
+// service_deny_entries are hard-delete records (PADR-0027), so every row is an active
+// restriction - no status filter is needed. A subject with deny entries for several services is
+// counted once.
+func CountRestrictedSubjects(ctx context.Context) (int, error) {
+	subjects, err := database.Db.Collection(constants.ServiceDenyEntriesCollection).
+		Distinct(ctx, "subject", bson.D{})
+	if err != nil {
+		return 0, err
+	}
+	return len(subjects), nil
+}
+
 // ListDenyEntriesForSubject returns every deny entry for subject.
 func ListDenyEntriesForSubject(ctx context.Context, subject string) ([]*ServiceDenyEntry, error) {
 	return database.Query[ServiceDenyEntry](

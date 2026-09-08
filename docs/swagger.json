@@ -16,6 +16,58 @@
         "version": "1.0"
     },
     "paths": {
+        "/api/admin/deny-entries/stats": {
+            "get": {
+                "description": "Number of distinct subjects with at least one active service deny entry",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Count of restricted users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared internal-service secret",
+                        "name": "X-Internal-Service-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Acting admin's Auth0 sub",
+                        "name": "X-Acting-User-Sub",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/server.denyEntryStatsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/vo.ErrorVO"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/deny-entries/{subject}": {
             "post": {
                 "description": "Deny a subject access to a service",
@@ -574,6 +626,14 @@
             "properties": {
                 "service": {
                     "type": "string"
+                }
+            }
+        },
+        "server.denyEntryStatsResponse": {
+            "type": "object",
+            "properties": {
+                "restricted_users": {
+                    "type": "integer"
                 }
             }
         },
