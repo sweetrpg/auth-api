@@ -59,7 +59,7 @@
 				
 				<option value="file1">github.com/sweetrpg/auth-api/auth0/jwks_cache.go (82.7%)</option>
 				
-				<option value="file2">github.com/sweetrpg/auth-api/cmd/auth-api/main.go (20.6%)</option>
+				<option value="file2">github.com/sweetrpg/auth-api/cmd/auth-api/main.go (0.0%)</option>
 				
 				<option value="file3">github.com/sweetrpg/auth-api/cmd/backfill-audit-fields/main.go (0.0%)</option>
 				
@@ -291,7 +291,6 @@ import (
         "os"
         "strconv"
         "strings"
-        "sync"
         "time"
 
         "github.com/getsentry/sentry-go"
@@ -306,8 +305,9 @@ import (
         ginSwagger "github.com/swaggo/gin-swagger"
         apiconstants "github.com/sweetrpg/api-core.go/constants"
         "github.com/sweetrpg/api-core.go/featureflags"
+        "github.com/sweetrpg/api-core.go/ratelimit"
         "github.com/sweetrpg/api-core.go/tracing"
-        "github.com/sweetrpg/api-core.go/vo"
+        apiutil "github.com/sweetrpg/api-core.go/util"
         "github.com/sweetrpg/auth-api/auth0"
         "github.com/sweetrpg/auth-api/constants"
         "github.com/sweetrpg/auth-api/docs"
@@ -316,7 +316,6 @@ import (
         "github.com/sweetrpg/common.go/util"
         "github.com/sweetrpg/mongodb.go/database"
         "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
-        "golang.org/x/time/rate"
 )
 
 // @title Auth API service
@@ -373,7 +372,21 @@ func main() <span class="cov0" title="0">{
 
         setupSwagger(r)
 
-        r.Use(RateLimiter())
+        // Per-client/IP rate limiter (Redis-backed, fail-closed). Tier values come from the env
+        // (RATE_LIMIT_*); auth-api runs a looser posture so the synchronous catalog-api -&gt; /authz/check
+        // chain is not throttled. A rate-limit-store outage returns 503, never unlimited traffic.
+        redisPool := apiutil.RedisPool()
+        if redisPool != nil </span><span class="cov0" title="0">{
+                pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+                if err := ratelimit.Ping(pingCtx, redisPool); err != nil </span><span class="cov0" title="0">{
+                        logging.Logger.Error("REDIS_HOST is configured but unreachable at startup; rate-limited requests will fail closed until it recovers",
+                                "error", err.Error())
+                }</span>
+                <span class="cov0" title="0">cancel()</span>
+        } else<span class="cov0" title="0"> {
+                logging.Logger.Warn("REDIS_HOST is not configured; rate limiting will fail closed (503) on every limited request")
+        }</span>
+        <span class="cov0" title="0">r.Use(ratelimit.Middleware(redisPool, ratelimit.DefaultOptions()))
 
         server.SetupHandlers(r, jwksCache, auth0Config)
 
@@ -526,64 +539,6 @@ func setupMetrics(r *gin.Engine) <span class="cov0" title="0">{
         m.SetDuration([]float64{0.1, 0.3, 1.2, 5, 10})
         m.Use(r)
 }</span>
-
-// exemptFromRateLimit lists paths that must never fail because unrelated
-// traffic exhausted the rate budget - a k8s liveness/readiness probe getting
-// 429'd here previously turned ordinary write load (e.g. a bulk import
-// driving catalog-api -&gt; POST /authz/check per write) into a pod restart.
-var exemptFromRateLimit = map[string]bool{
-        "/status/ping":   true,
-        "/status/health": true,
-}
-
-// RateLimiter rate-limits per caller (client IP) rather than one bucket
-// shared by every request in the process - previously a single busy caller
-// (or a burst of legitimate internal traffic) exhausted the budget for every
-// other caller, including the service's own health checks.
-//
-// Defaults (5 req/s sustained, burst from RATE_LIMIT) are looser than the
-// old hardwired 1 req/s: every catalog-api write synchronously calls
-// /authz/check, so the previous rate turned any moderate write burst into a
-// cascade of 429s. Tune via RATE_LIMIT_PER_SECOND and RATE_LIMIT.
-//
-// limiters grows one entry per distinct client IP and is never pruned - fine
-// at the small, stable set of in-cluster caller IPs this service actually
-// sees; add idle-entry eviction if the caller set becomes large or unbounded
-// (e.g. this endpoint becomes directly internet-facing).
-func RateLimiter() gin.HandlerFunc <span class="cov4" title="3">{
-        rps := rate.Limit(util.GetEnvInt(constants.RATE_LIMIT_PER_SECOND, 5))
-        burst := util.GetEnvInt(apiconstants.RATE_LIMIT, 20)
-
-        var mu sync.Mutex
-        limiters := map[string]*rate.Limiter{}
-
-        limiterFor := func(key string) *rate.Limiter </span><span class="cov6" title="6">{
-                mu.Lock()
-                defer mu.Unlock()
-                l, ok := limiters[key]
-                if !ok </span><span class="cov4" title="3">{
-                        l = rate.NewLimiter(rps, burst)
-                        limiters[key] = l
-                }</span>
-                <span class="cov6" title="6">return l</span>
-        }
-
-        <span class="cov4" title="3">return func(c *gin.Context) </span><span class="cov10" title="16">{
-                if exemptFromRateLimit[c.Request.URL.Path] </span><span class="cov8" title="10">{
-                        c.Next()
-                        return
-                }</span>
-                <span class="cov6" title="6">if limiterFor(c.ClientIP()).Allow() </span><span class="cov5" title="4">{
-                        c.Next()
-                        return
-                }</span>
-                <span class="cov3" title="2">logging.Logger.Warn("Rate limit exceeded", "clientIP", c.ClientIP(), "path", c.Request.URL.Path)
-                c.JSON(429, vo.ErrorVO{
-                        Error:   apiconstants.ErrorRateLimited,
-                        Message: "Limit exceeded",
-                })</span>
-        }
-}
 </pre>
 		
 		<pre class="file" id="file3" style="display: none">// Command backfill-audit-fields stamps the platform audit fields (PADR-0001) on auth-api's
