@@ -17,13 +17,12 @@ require (
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
-	github.com/sweetrpg/api-core.go v0.1.1
+	github.com/sweetrpg/api-core.go v0.3.1
 	github.com/sweetrpg/authz-client.go v0.1.0
 	github.com/sweetrpg/common.go v0.0.16
 	github.com/sweetrpg/mongodb.go v0.0.193
 	go.mongodb.org/mongo-driver v1.17.9
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.69.0
-	golang.org/x/time v0.15.0
 )
 
 require (
@@ -59,6 +58,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/gomodule/redigo v1.9.3 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.11 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
@@ -120,6 +120,7 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect

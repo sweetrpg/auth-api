@@ -118,6 +118,18 @@ Auth0 application - see `auth-web`'s `AGENTS.md`), and `INTERNAL_SERVICE_TOKEN` 
 Akeyless via `ExternalSecret`s, not the configmap. This service holds no session store of its own
 - it's a stateless, bearer-token-only API.
 
+## Rate limiting
+
+Per-client/IP rate limiting is on by default via the shared `api-core.go/ratelimit` middleware
+(Redis-backed counters keyed by `X-API-Key` else client IP, `cheap` tier for `/status/*`,
+`standard` otherwise, 429 on exceed). The former in-process per-IP `rate.Limiter` map and the
+`RATE_LIMIT_PER_SECOND` env var were removed. This makes auth-api Redis-dependent at request
+time: a rate-limit-store outage returns 503 (fail closed, never unlimited). `REDIS_HOST`/
+`REDIS_PORT` are in the dev configmap; `REDIS_PASS` comes from the `api-cache` `ExternalSecret`.
+Tier defaults are looser than other services (`RATE_LIMIT_STANDARD` 300/60) so the synchronous
+catalog-api -> `/authz/check` chain is not throttled. See `platform`'s
+`openspec/changes/fix-rate-limiting-per-client-ip`.
+
 ## Committing Code
 
 [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`.
