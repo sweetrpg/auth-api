@@ -1,3 +1,13 @@
+## [0.7.0] - 2026-09-09
+
+### 🚀 Features
+
+- *(ratelimit)* Replace in-process per-IP limiter with shared api-core middleware (#106)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.6.0
+- *(deploy)* Add per-client rate-limit and redis env to dev overlay (#106)
 ## [0.6.0] - 2026-09-08
 
 ### 🚀 Features
