@@ -19,3 +19,13 @@ data:
   BUILD_INFO_PATH: /app/config/build-info.json
   LOG_LEVEL: info
   OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo-distributor.observability.svc.cluster.local:4318/
+  # Per-client/IP rate limiting (platform rate-limiting capability, #106). Looser posture per
+  # design D4 so the synchronous catalog-api -> /authz/check call chain is not throttled.
+  RATE_LIMIT_CHEAP: "1200"
+  RATE_LIMIT_CHEAP_WINDOW_SECONDS: "60"
+  RATE_LIMIT_STANDARD: "300"
+  RATE_LIMIT_STANDARD_WINDOW_SECONDS: "60"
+  # Namespace cache Service, backs the distributed rate-limit counters. Fail-closed: a store
+  # outage returns 503, never unlimited traffic. REDIS_PASS comes from an ExternalSecret (#106).
+  REDIS_HOST: cache.sweetrpg-auth.svc.cluster.local
+  REDIS_PORT: "6379"
