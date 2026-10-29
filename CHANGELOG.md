@@ -1,3 +1,8 @@
+## [0.7.1] - 2026-10-29
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.7.0
 ## [0.7.0] - 2026-09-09
 
 ### 🚀 Features
