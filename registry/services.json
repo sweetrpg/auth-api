@@ -1,0 +1,9 @@
+[
+  {"id": "admin-api", "name": "Admin API"},
+  {"id": "auth-api", "name": "Auth API"},
+  {"id": "catalog-api", "name": "Catalog API"},
+  {"id": "entitlements-api", "name": "Entitlements API"},
+  {"id": "game-room-api", "name": "Game Room API"},
+  {"id": "game-systems-api", "name": "Game Systems API"},
+  {"id": "users-api", "name": "Users API"}
+]
