@@ -16,6 +16,9 @@ data:
   DB_NAME: sweetrpg-auth
   DB_OPTS: retryWrites=true&w=majority
   PORT: "8000"
+  # Resolves a login's canonical user (POST /internal/resolve-subjects with the shared internal
+  # token) so roles and deny entries follow the person across linked logins.
+  USERS_API_URL: http://api-v1.sweetrpg-users.svc.cluster.local:8000
   BUILD_INFO_PATH: /app/config/build-info.json
   LOG_LEVEL: info
   OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo-distributor.observability.svc.cluster.local:4318/

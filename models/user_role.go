@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/sweetrpg/auth-api/constants"
 	"github.com/sweetrpg/mongodb.go/database"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 // UserRole is a single role assignment. A subject with no rows here defaults
@@ -18,7 +17,10 @@ import (
 type UserRole struct {
 	ID      uuid.UUID `bson:"_id" json:"id"`
 	Subject string    `bson:"subject" json:"subject"`
-	Role    Role      `bson:"role" json:"role"`
+	// UserID is the canonical user the role belongs to; empty on rows written before roles
+	// followed the person (matched through Subject until the backfill sets it).
+	UserID string `bson:"user_id,omitempty" json:"user_id,omitempty"`
+	Role   Role   `bson:"role" json:"role"`
 	// Platform audit fields (PADR-0001). user_roles are hard-delete security-control records
 	// (PADR-0027), so there is no deleted_* pair. A row is only ever added or removed, never
 	// updated in place, so updated_* always equals created_*.
@@ -28,46 +30,34 @@ type UserRole struct {
 	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
 
-// ListRolesForSubject returns every role row for subject.
-func ListRolesForSubject(ctx context.Context, subject string) ([]*UserRole, error) {
-	return database.Query[UserRole](
-		constants.UserRolesCollection,
-		bson.D{{Key: "subject", Value: subject}},
-		nil, nil, 0, 0,
-	)
+// ListRolesFor returns every role row that applies to the principal.
+func ListRolesFor(ctx context.Context, p Principal) ([]*UserRole, error) {
+	return database.Query[UserRole](constants.UserRolesCollection, p.filter(), nil, nil, 0, 0)
 }
 
-// HasRole reports whether subject already holds role.
-func HasRole(ctx context.Context, subject string, role Role) (bool, error) {
-	rows, err := database.Query[UserRole](
-		constants.UserRolesCollection,
-		bson.D{{Key: "subject", Value: subject}, {Key: "role", Value: role}},
-		nil, nil, 0, 1,
-	)
+// HasRole reports whether the principal already holds role.
+func HasRole(ctx context.Context, p Principal, role Role) (bool, error) {
+	rows, err := database.Query[UserRole](constants.UserRolesCollection, p.with("role", role), nil, nil, 0, 1)
 	if err != nil {
 		return false, err
 	}
 	return len(rows) > 0, nil
 }
 
-// AddRole inserts a new role assignment attributed to actingUserID. Callers should check
-// HasRole first to keep the operation idempotent, matching the Swift service's behavior
-// (a no-op, not a duplicate, when the subject already holds the role).
-func AddRole(ctx context.Context, subject string, role Role, actingUserID string) error {
+// AddRole inserts a role assignment for the principal attributed to actingUserID. Callers should
+// check HasRole first to keep the operation idempotent.
+func AddRole(ctx context.Context, p Principal, role Role, actingUserID string) error {
 	now := time.Now().UTC()
 	doc := UserRole{
-		ID: uuid.New(), Subject: subject, Role: role,
+		ID: uuid.New(), Subject: p.Subject, UserID: p.UserID, Role: role,
 		CreatedBy: actingUserID, CreatedAt: now, UpdatedBy: actingUserID, UpdatedAt: now,
 	}
 	_, err := database.Db.Collection(constants.UserRolesCollection).InsertOne(ctx, doc)
 	return err
 }
 
-// RemoveRole deletes every role row matching subject+role (there should be at
-// most one).
-func RemoveRole(ctx context.Context, subject string, role Role) error {
-	_, err := database.Db.Collection(constants.UserRolesCollection).DeleteMany(ctx, bson.D{
-		{Key: "subject", Value: subject}, {Key: "role", Value: role},
-	})
+// RemoveRole deletes the principal's role rows, whichever login or user they were keyed by.
+func RemoveRole(ctx context.Context, p Principal, role Role) error {
+	_, err := database.Db.Collection(constants.UserRolesCollection).DeleteMany(ctx, p.with("role", role))
 	return err
 }

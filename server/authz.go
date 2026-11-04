@@ -76,8 +76,9 @@ func checkAuthz(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 	}
 
 	subject := claims.Subject
+	p := principal(c.Request.Context(), subject)
 
-	denied, err := models.HasDenyEntry(c.Request.Context(), subject, req.Service)
+	denied, err := models.HasDenyEntry(c.Request.Context(), p, req.Service)
 	if err != nil {
 		logging.Logger.Error("Failed to look up deny entry", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, authzErrorResponse{Error: "query_failed"})
@@ -88,7 +89,7 @@ func checkAuthz(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 		return
 	}
 
-	roles, err := models.ListRolesForSubject(c.Request.Context(), subject)
+	roles, err := models.ListRolesFor(c.Request.Context(), p)
 	if err != nil {
 		logging.Logger.Error("Failed to look up roles", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, authzErrorResponse{Error: "query_failed"})
