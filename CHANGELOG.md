@@ -1,3 +1,12 @@
+## [0.7.3] - 2026-11-04
+
+### 🐛 Bug Fixes
+
+- *(roles)* Record the acting subject when its canonical id cannot be resolved
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.7.2
 ## [0.7.2] - 2026-11-04
 
 ### 🐛 Bug Fixes
