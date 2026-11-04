@@ -223,8 +223,8 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzC
 		return
 	}
 
-	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
-	if err != nil {
+	actingUserID, ok := actingUserForAudit(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if !ok {
 		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
@@ -289,8 +289,8 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 		return
 	}
 
-	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
-	if err != nil {
+	actingUserID, ok := actingUserForAudit(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if !ok {
 		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
@@ -345,8 +345,8 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 		return
 	}
 
-	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
-	if err != nil {
+	actingUserID, ok := actingUserForAudit(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if !ok {
 		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
@@ -406,8 +406,8 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 		return
 	}
 
-	actingUserID, err := resolveActingUser(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
-	if err != nil {
+	actingUserID, ok := actingUserForAudit(c.Request.Context(), authzClient, usersBaseURL, actingUserSub, token)
+	if !ok {
 		c.JSON(http.StatusServiceUnavailable, apiv.ErrorVO{Error: "user_resolution_unavailable", Message: "unable to resolve the calling user"})
 		return
 	}
@@ -554,6 +554,22 @@ func hasValidInternalServiceToken(c *gin.Context) bool {
 	}
 	presented := c.GetHeader(internalServiceTokenHeader)
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(presented)) == 1
+}
+
+// actingUserForAudit returns who to attribute an admin write to. Attribution must not block the
+// action, so when the canonical ID cannot be resolved (users-api unreachable, not configured, or
+// refusing the lookup) the cause is logged at ERROR and the acting Auth0 subject is recorded
+// instead. ok is false only when there is nothing at all to attribute to.
+func actingUserForAudit(ctx context.Context, authzClient *authz.Client, usersBaseURL, actingUserSub, token string) (string, bool) {
+	id, err := resolveActingUser(ctx, authzClient, usersBaseURL, actingUserSub, token)
+	if err == nil {
+		return id, true
+	}
+	logging.Logger.Error("could not resolve the acting user's canonical id; recording the Auth0 subject in the audit trail", "subject", actingUserSub, "error", err.Error())
+	if actingUserSub == "" {
+		return "", false
+	}
+	return actingUserSub, true
 }
 
 // resolveActingUser resolves the acting user's Auth0 subject to their canonical
