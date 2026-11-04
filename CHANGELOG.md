@@ -1,3 +1,13 @@
+## [0.7.2] - 2026-11-04
+
+### 🐛 Bug Fixes
+
+- *(roles)* Read-only admin calls need no acting user
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.7.1
+- *(debug)* Restrict workflow token permissions
 ## [0.7.1] - 2026-10-29
 
 ### ⚙️ Miscellaneous Tasks
