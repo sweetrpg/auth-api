@@ -16,6 +16,7 @@ import (
 	"github.com/sweetrpg/auth-api/auth0"
 	"github.com/sweetrpg/auth-api/constants"
 	"github.com/sweetrpg/auth-api/models"
+	"github.com/sweetrpg/auth-api/registry"
 	"github.com/sweetrpg/authz-client.go/authz"
 	"github.com/sweetrpg/common.go/logging"
 	"github.com/sweetrpg/common.go/util"
@@ -50,6 +51,7 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 	authzClient := authz.NewClient("", usersBaseURL)
 
 	group := g.Group("/api/admin")
+	group.GET("/services", func(c *gin.Context) { listServices(c, cache, config) })
 	group.GET("/roles", func(c *gin.Context) { listRoles(c, cache, config) })
 	group.GET("/roles/:subject", func(c *gin.Context) { getSubject(c, cache, config) })
 	group.POST("/roles/:subject", func(c *gin.Context) { addRole(c, cache, config, authzClient, usersBaseURL) })
@@ -59,6 +61,23 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 	group.GET("/deny-entries/stats", func(c *gin.Context) { denyEntryStats(c, cache, config) })
 	group.POST("/deny-entries/:subject", func(c *gin.Context) { addDenyEntry(c, cache, config, authzClient, usersBaseURL) })
 	group.DELETE("/deny-entries/:subject/:service", func(c *gin.Context) { removeDenyEntry(c, cache, config, authzClient, usersBaseURL) })
+}
+
+// List the services a user can be denied.
+//
+//	@Summary		List valid service names
+//	@Description	The registered services, as {id, name}, for the deny-entry selector
+//	@Tags			admin
+//	@Produce		json
+//	@Success		200	{array}		registry.Service
+//	@Failure		401	{object}	apiv.ErrorVO
+//	@Failure		403	{object}	apiv.ErrorVO
+//	@Router			/api/admin/services [get]
+func listServices(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
+	if _, _, ok := verifyAdminRole(c, cache, config); !ok {
+		return
+	}
+	c.JSON(http.StatusOK, registry.Services())
 }
 
 type denyEntryStatsResponse struct {
@@ -359,6 +378,11 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 	var req denyEntryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: err.Error()})
+		return
+	}
+
+	if !registry.Known(req.Service) {
+		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "unknown_service", Message: "unknown service"})
 		return
 	}
 
