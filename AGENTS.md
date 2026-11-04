@@ -70,6 +70,14 @@ the request with 400 before touching the database if it's missing or empty, sinc
 needs to know who to attribute the action to. Read-only requests (GET, HEAD) need no header. Auth0 bearer-token callers don't need this header; their
 own verified token's subject is used instead.
 
+### Service registry
+
+`registry/services.json` lists the services a user can be denied (`id` is what the service passes
+to `/authz/check`, `name` is for display). `GET /api/admin/services` returns it as `[{id, name}]`
+and `POST /api/admin/deny-entries/:subject` rejects other names with 400 `unknown_service`.
+`/authz/check` stays default-allow for any name, so a new service works before it is listed;
+add it to the file to make it deniable.
+
 ## Language and Framework
 
 Go, following `sweetrpg/platform`'s `docs/service-conventions.md` baseline: Gin, `api-core.go`
