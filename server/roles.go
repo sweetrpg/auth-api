@@ -489,14 +489,16 @@ func performAuditedWith(
 // response and returns ok=false. Trusts a valid X-Internal-Service-Token
 // outright (see hasValidInternalServiceToken for why admin-web uses this
 // instead of an Auth0 bearer token) but still requires an
-// X-Acting-User-Sub header identifying who initiated the action, since
-// every mutating route needs that for its audit log. Falls through to
+// X-Acting-User-Sub header on mutations, identifying who initiated the action, since
+// every mutating route needs that for its audit log (reads do not). Falls through to
 // verifying an Auth0 bearer token's admin role otherwise, using the
 // verified token's own subject as the acting user.
 func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, string, bool) {
 	if hasValidInternalServiceToken(c) {
 		actingUserSub := c.GetHeader(actingUserSubHeader)
-		if actingUserSub == "" {
+		// Only a mutation is audited, so only a mutation must say who asked; a read-only call
+		// (admin-web sends no header on those) is trusted on the shared token alone.
+		if actingUserSub == "" && !isReadOnly(c.Request.Method) {
 			c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "X-Acting-User-Sub header is required"})
 			return "", "", false
 		}
@@ -533,6 +535,11 @@ func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 		return "", "", false
 	}
 	return claims.Subject, token, true
+}
+
+// isReadOnly reports whether the HTTP method changes nothing.
+func isReadOnly(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
 }
 
 // hasValidInternalServiceToken reports whether the request presented the
