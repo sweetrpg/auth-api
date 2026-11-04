@@ -64,10 +64,10 @@ pre-action write itself fails, the mutation never runs - an admin action that ca
 not performed, no exceptions. `actingUserSub` and `targetSubject` are both raw Auth0 `sub`
 strings, not foreign keys.
 
-Internal-service-token callers must also send `X-Acting-User-Sub` (the acting admin's Auth0
-`sub`, resolved by `admin-web` from the shared session) - `verifyAdminRole` rejects the request
-with 400 before touching the database if it's missing or empty, since the audit log needs to
-know who to attribute the action to. Auth0 bearer-token callers don't need this header; their
+Internal-service-token callers must also send `X-Acting-User-Sub` on mutations (the acting
+admin's Auth0 `sub`, resolved by `admin-web` from the shared session) - `verifyAdminRole` rejects
+the request with 400 before touching the database if it's missing or empty, since the audit log
+needs to know who to attribute the action to. Read-only requests (GET, HEAD) need no header. Auth0 bearer-token callers don't need this header; their
 own verified token's subject is used instead.
 
 ## Language and Framework

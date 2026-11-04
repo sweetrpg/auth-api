@@ -44,20 +44,3 @@ func TestDenyEntryStats_RejectsMismatchedInternalToken(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
-
-// A valid internal token without X-Acting-User-Sub is a 400 from verifyAdminRole - which also
-// proves the static /deny-entries/stats route matched rather than 404ing or being captured by
-// the /deny-entries/:subject param route.
-func TestDenyEntryStats_RouteMatchesAndRequiresActingUser(t *testing.T) {
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
-	r := newDenyStatsRouter(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/deny-entries/stats", nil)
-	req.Header.Set(internalServiceTokenHeader, "test-internal-token")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d (route should match and demand X-Acting-User-Sub)", rec.Code, http.StatusBadRequest)
-	}
-}
