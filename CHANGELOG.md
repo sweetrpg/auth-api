@@ -1,3 +1,12 @@
+## [0.8.0] - 2026-11-04
+
+### 🚀 Features
+
+- *(admin)* List valid service names and reject unknown deny targets
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.7.3
 ## [0.7.3] - 2026-11-04
 
 ### 🐛 Bug Fixes
