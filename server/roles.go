@@ -1,14 +1,11 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -48,6 +45,7 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 	logging.Logger.Info("Setting up admin roles endpoint handlers...")
 
 	usersBaseURL := util.GetEnv(constants.USERS_API_URL, "")
+	ensureUserResolver()
 	authzClient := authz.NewClient("", usersBaseURL)
 
 	group := g.Group("/api/admin")
@@ -133,7 +131,8 @@ func denyEntryStats(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config)
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/roles [get]
 func listRoles(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	if _, _, ok := verifyAdminRole(c, cache, config); !ok {
+	_, token, ok := verifyAdminRole(c, cache, config)
+	if !ok {
 		return
 	}
 
@@ -146,7 +145,7 @@ func listRoles(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 	subjects := strings.Split(raw, ",")
 	summaries := make([]subjectRolesSummary, 0, len(subjects))
 	for _, subject := range subjects {
-		summary, err := buildSummary(c.Request.Context(), subject)
+		summary, err := buildSummary(c.Request.Context(), subject, token)
 		if err != nil {
 			logging.Logger.Error("Failed to build roles summary", "error", err.Error())
 			c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to list roles"})
@@ -174,7 +173,8 @@ func listRoles(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 //		@Failure		500							{object}	apiv.ErrorVO
 //		@Router			/api/admin/roles/{subject} [get]
 func getSubject(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
-	if _, _, ok := verifyAdminRole(c, cache, config); !ok {
+	_, token, ok := verifyAdminRole(c, cache, config)
+	if !ok {
 		return
 	}
 
@@ -183,7 +183,7 @@ func getSubject(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
 	}
-	summary, err := buildSummary(c.Request.Context(), subject)
+	summary, err := buildSummary(c.Request.Context(), subject, token)
 	if err != nil {
 		logging.Logger.Error("Failed to build roles summary", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to get subject"})
@@ -192,12 +192,12 @@ func getSubject(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 	c.JSON(http.StatusOK, summary)
 }
 
-func buildSummary(ctx context.Context, subject string) (subjectRolesSummary, error) {
-	roles, err := models.ListRolesForSubject(ctx, subject)
+func buildSummary(ctx context.Context, subject, adminToken string) (subjectRolesSummary, error) {
+	roles, err := models.ListRolesFor(ctx, targetPrincipal(ctx, subject, adminToken))
 	if err != nil {
 		return subjectRolesSummary{}, err
 	}
-	denials, err := models.ListDenyEntriesForSubject(ctx, subject)
+	denials, err := models.ListDenyEntriesFor(ctx, targetPrincipal(ctx, subject, adminToken))
 	if err != nil {
 		return subjectRolesSummary{}, err
 	}
@@ -249,6 +249,7 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzC
 	}
 
 	subject := c.Param("subject")
+	p := targetPrincipal(c.Request.Context(), subject, token)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -266,14 +267,14 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzC
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "add_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
-			exists, err := models.HasRole(ctx, subject, role)
+			exists, err := models.HasRole(ctx, p, role)
 			if err != nil {
 				return 0, err
 			}
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddRole(ctx, subject, role, actingUserID); err != nil {
+			if err := models.AddRole(ctx, p, role, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -315,6 +316,7 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 	}
 
 	subject := c.Param("subject")
+	p := targetPrincipal(c.Request.Context(), subject, token)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -327,7 +329,7 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "remove_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
-			if err := models.RemoveRole(ctx, subject, role); err != nil {
+			if err := models.RemoveRole(ctx, p, role); err != nil {
 				return 0, err
 			}
 			return http.StatusNoContent, nil
@@ -371,6 +373,7 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 	}
 
 	subject := c.Param("subject")
+	p := targetPrincipal(c.Request.Context(), subject, token)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -388,14 +391,14 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "add_deny_entry", subject, req.Service,
 		func(ctx context.Context) (int, error) {
-			exists, err := models.HasDenyEntry(ctx, subject, req.Service)
+			exists, err := models.HasDenyEntry(ctx, p, req.Service)
 			if err != nil {
 				return 0, err
 			}
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddDenyEntry(ctx, subject, req.Service, actingUserID); err != nil {
+			if err := models.AddDenyEntry(ctx, p, req.Service, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -437,6 +440,7 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 	}
 
 	subject := c.Param("subject")
+	p := targetPrincipal(c.Request.Context(), subject, token)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -449,7 +453,7 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "remove_deny_entry", subject, service,
 		func(ctx context.Context) (int, error) {
-			if err := models.RemoveDenyEntry(ctx, subject, service); err != nil {
+			if err := models.RemoveDenyEntry(ctx, p, service); err != nil {
 				return 0, err
 			}
 			return http.StatusNoContent, nil
@@ -541,7 +545,7 @@ func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 		return "", "", false
 	}
 
-	roles, err := models.ListRolesForSubject(c.Request.Context(), claims.Subject)
+	roles, err := models.ListRolesFor(c.Request.Context(), ownPrincipal(c.Request.Context(), claims.Subject, token))
 	if err != nil {
 		logging.Logger.Error("Failed to look up roles", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to verify admin role"})
@@ -597,10 +601,8 @@ func actingUserForAudit(ctx context.Context, authzClient *authz.Client, usersBas
 }
 
 // resolveActingUser resolves the acting user's Auth0 subject to their canonical
-// users._id. For bearer-token callers, uses authzClient.ResolveUserID. For
-// internal-service-token callers, calls users-api's /internal/resolve-subjects
-// with the provided subject. Returns an error if resolution fails or returns
-// empty, so the caller can fail closed.
+// users._id with the caller's own bearer token (authzClient.ResolveUserID). Returns an error when
+// there is no token or it resolves to nothing; actingUserForAudit then records the subject.
 func resolveActingUser(ctx context.Context, authzClient *authz.Client, usersBaseURL, actingUserSub, token string) (string, error) {
 	if token != "" {
 		userID := authzClient.ResolveUserID(ctx, token)
@@ -610,53 +612,6 @@ func resolveActingUser(ctx context.Context, authzClient *authz.Client, usersBase
 		return userID, nil
 	}
 
-	// Internal service token path: call users-api's /internal/resolve-subjects
-	if usersBaseURL == "" {
-		return "", fmt.Errorf("resolveActingUser: USERS_API_URL not configured")
-	}
-
-	// Use the same internal service token that auth-api uses for its own auth
-	internalToken := util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "")
-	if internalToken == "" {
-		return "", fmt.Errorf("resolveActingUser: INTERNAL_SERVICE_TOKEN not configured")
-	}
-
-	type resolveRequest struct {
-		Subjects []string `json:"subjects"`
-	}
-	type resolveResponse map[string]string
-
-	body, err := json.Marshal(resolveRequest{Subjects: []string{actingUserSub}})
-	if err != nil {
-		return "", fmt.Errorf("resolveActingUser: marshal request: %w", err)
-	}
-
-	httpClient := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, usersBaseURL+"/internal/resolve-subjects", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("resolveActingUser: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+internalToken)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("resolveActingUser: request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("resolveActingUser: unexpected status %d from users-api", resp.StatusCode)
-	}
-
-	var out resolveResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("resolveActingUser: decode response: %w", err)
-	}
-
-	userID := out[actingUserSub]
-	if userID == "" {
-		return "", fmt.Errorf("resolveActingUser: subject not resolved")
-	}
-	return userID, nil
+	// An internal-service-token caller has no user bearer token to resolve with.
+	return "", fmt.Errorf("resolveActingUser: no bearer token to resolve %q with", actingUserSub)
 }

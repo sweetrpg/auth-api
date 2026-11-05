@@ -70,6 +70,22 @@ the request with 400 before touching the database if it's missing or empty, sinc
 needs to know who to attribute the action to. Read-only requests (GET, HEAD) need no header. Auth0 bearer-token callers don't need this header; their
 own verified token's subject is used instead.
 
+### Roles and deny entries belong to the person
+
+`user_roles` and `service_deny_entries` rows carry the Auth0 `subject` they were granted under
+and, once known, the canonical `user_id`. Every lookup (`/authz/check`, `verifyAdminRole`, the
+admin reads and writes) matches a row by `user_id` of the caller's user OR its `subject`, so a
+role or deny entry applies to all of a person's linked logins and removing it through any login
+removes it for the person. `identity.Resolver` finds the user with a real user's bearer token only
+(PADR-0037, no service token): `/authz/check` uses the caller's own token against users-api
+`GET /profile` (cached ~1 min; for the `users-api` service it uses the cache only, since users-api
+answers `/profile` by calling `/authz/check`); admin reads and writes use the administrator's
+forwarded bearer with `POST /internal/resolve-subjects`. With no token (an `X-Internal-Service-Token`
+caller) or when users-api is unreachable, the lookup falls back to the subject alone and logs a WARN.
+New rows store both ids. Existing rows get `user_id` from the one-off
+`ADMIN_BEARER_TOKEN=... go run ./cmd/backfill-user-ids`, run as an admin user.
+The admin API still takes a subject in the path: pass any of the user's subjects.
+
 ### Service registry
 
 `registry/services.json` lists the services a user can be denied (`id` is what the service passes
