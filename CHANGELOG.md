@@ -1,3 +1,12 @@
+## [0.10.0] - 2026-11-05
+
+### 🚀 Features
+
+- *(admin)* Remove the inbound internal service token branch
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.9.0
 ## [0.9.0] - 2026-11-05
 
 ### 🚀 Features
