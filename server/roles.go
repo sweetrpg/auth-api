@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,11 +16,6 @@ import (
 	"github.com/sweetrpg/authz-client.go/authz"
 	"github.com/sweetrpg/common.go/logging"
 	"github.com/sweetrpg/common.go/util"
-)
-
-const (
-	internalServiceTokenHeader = "X-Internal-Service-Token"
-	actingUserSubHeader        = "X-Acting-User-Sub"
 )
 
 type subjectRolesSummary struct {
@@ -513,75 +507,58 @@ func performAuditedWith(
 	return status, nil
 }
 
-// verifyAdminRole resolves the acting user's subject and bearer token, or writes an error
-// response and returns ok=false. Trusts a valid X-Internal-Service-Token
-// outright (see hasValidInternalServiceToken for why admin-web uses this
-// instead of an Auth0 bearer token) but still requires an
-// X-Acting-User-Sub header on mutations, identifying who initiated the action, since
-// every mutating route needs that for its audit log (reads do not). Falls through to
-// verifying an Auth0 bearer token's admin role otherwise, using the
-// verified token's own subject as the acting user.
-func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, string, bool) {
-	if hasValidInternalServiceToken(c) {
-		actingUserSub := c.GetHeader(actingUserSubHeader)
-		// Only a mutation is audited, so only a mutation must say who asked; a read-only call
-		// (admin-web sends no header on those) is trusted on the shared token alone.
-		if actingUserSub == "" && !isReadOnly(c.Request.Method) {
-			c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "X-Acting-User-Sub header is required"})
-			return "", "", false
-		}
-		return actingUserSub, "", true
+// verifyToken verifies a bearer token and returns its Auth0 subject. A variable so tests can
+// stand in for Auth0's JWKS.
+var verifyToken = func(ctx context.Context, cache *auth0.JWKSCache, token string, config auth0.Config) (string, error) {
+	claims, err := cache.Verify(ctx, token, config)
+	if err != nil {
+		return "", err
 	}
+	return claims.Subject, nil
+}
 
+// holdsAdminRole reports whether the principal has the admin role. A variable so tests need no
+// database.
+var holdsAdminRole = func(ctx context.Context, p models.Principal) (bool, error) {
+	roles, err := models.ListRolesFor(ctx, p)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range roles {
+		if r.Role == models.RoleAdmin {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// verifyAdminRole resolves the acting administrator's subject and bearer token, or writes an
+// error response and returns ok=false. The only credential is an Auth0 bearer token whose subject
+// holds the admin role (PADR-0037: no service tokens); the token's own subject is the acting user.
+func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) (string, string, bool) {
 	token := bearerToken(c)
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
 		return "", "", false
 	}
 
-	claims, err := cache.Verify(c.Request.Context(), token, config)
+	subject, err := verifyToken(c.Request.Context(), cache, token, config)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, apiv.ErrorVO{Error: "unauthorized", Message: "missing or invalid credentials"})
 		return "", "", false
 	}
 
-	roles, err := models.ListRolesFor(c.Request.Context(), ownPrincipal(c.Request.Context(), claims.Subject, token))
+	isAdmin, err := holdsAdminRole(c.Request.Context(), ownPrincipal(c.Request.Context(), subject, token))
 	if err != nil {
 		logging.Logger.Error("Failed to look up roles", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to verify admin role"})
 		return "", "", false
 	}
-	hasAdmin := false
-	for _, r := range roles {
-		if r.Role == models.RoleAdmin {
-			hasAdmin = true
-			break
-		}
-	}
-	if !hasAdmin {
+	if !isAdmin {
 		c.JSON(http.StatusForbidden, apiv.ErrorVO{Error: "forbidden", Message: "admin role required"})
 		return "", "", false
 	}
-	return claims.Subject, token, true
-}
-
-// isReadOnly reports whether the HTTP method changes nothing.
-func isReadOnly(method string) bool {
-	return method == http.MethodGet || method == http.MethodHead
-}
-
-// hasValidInternalServiceToken reports whether the request presented the
-// correct X-Internal-Service-Token header, compared constant-time against
-// INTERNAL_SERVICE_TOKEN. Always false when INTERNAL_SERVICE_TOKEN is unset
-// - the internal-auth path is then permanently disabled rather than
-// trusting an empty token.
-func hasValidInternalServiceToken(c *gin.Context) bool {
-	expected := util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "")
-	if expected == "" {
-		return false
-	}
-	presented := c.GetHeader(internalServiceTokenHeader)
-	return subtle.ConstantTimeCompare([]byte(expected), []byte(presented)) == 1
+	return subject, token, true
 }
 
 // actingUserForAudit returns who to attribute an admin write to. Attribution must not block the

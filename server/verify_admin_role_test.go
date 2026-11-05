@@ -10,50 +10,53 @@ import (
 	"github.com/sweetrpg/common.go/logging"
 )
 
-func verify(t *testing.T, method string, headers map[string]string) (sub string, ok bool, code int) {
+func verify(t *testing.T, method string, headers map[string]string) (sub, token string, ok bool, code int) {
 	t.Helper()
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
 	logging.Init()
 	gin.SetMode(gin.TestMode)
+	stubAdminAuth(t)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(method, "/api/admin/roles", nil)
 	for k, v := range headers {
 		c.Request.Header.Set(k, v)
 	}
-	sub, _, ok = verifyAdminRole(c, auth0.NewJWKSCache(), auth0.Config{Domain: "test.auth0.dev", Audience: "test-audience"})
-	return sub, ok, rec.Code
+	sub, token, ok = verifyAdminRole(c, auth0.NewJWKSCache(), auth0.Config{})
+	return sub, token, ok, rec.Code
 }
 
-// admin-web sends no X-Acting-User-Sub on read-only calls (the role listing, the restricted-user
-// count): nothing is audited, so the header is only needed for mutations.
-func TestInternalTokenReadsNeedNoActingUser(t *testing.T) {
-	for _, m := range []string{http.MethodGet, http.MethodHead} {
-		_, ok, code := verify(t, m, map[string]string{internalServiceTokenHeader: "test-internal-token"})
-		if !ok || code != http.StatusOK {
-			t.Errorf("%s: ok = %v, status = %d, want accepted", m, ok, code)
+func TestAdminBearerIsAccepted(t *testing.T) {
+	for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		sub, token, ok, _ := verify(t, m, map[string]string{"Authorization": "Bearer " + adminBearer})
+		if !ok || sub != "auth0|admin" || token != adminBearer {
+			t.Errorf("%s: sub = %q token = %q ok = %v", m, sub, token, ok)
 		}
 	}
 }
 
-func TestInternalTokenReadStillReturnsTheActingUserWhenGiven(t *testing.T) {
-	sub, ok, _ := verify(t, http.MethodGet, map[string]string{internalServiceTokenHeader: "test-internal-token", actingUserSubHeader: "auth0|admin"})
-	if !ok || sub != "auth0|admin" {
-		t.Errorf("sub = %q ok = %v", sub, ok)
+func TestNonAdminBearerIsForbidden(t *testing.T) {
+	_, _, ok, code := verify(t, http.MethodGet, map[string]string{"Authorization": "Bearer " + userBearer})
+	if ok || code != http.StatusForbidden {
+		t.Errorf("ok = %v, status = %d, want 403", ok, code)
 	}
 }
 
-func TestInternalTokenMutationsStillNeedTheActingUser(t *testing.T) {
-	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
-		_, ok, code := verify(t, m, map[string]string{internalServiceTokenHeader: "test-internal-token"})
-		if ok || code != http.StatusBadRequest {
-			t.Errorf("%s: ok = %v, status = %d, want 400", m, ok, code)
+func TestMissingOrBadBearerIsUnauthorized(t *testing.T) {
+	for name, h := range map[string]map[string]string{
+		"none":       nil,
+		"bad token":  {"Authorization": "Bearer nope"},
+		"not bearer": {"Authorization": "Basic abc"},
+	} {
+		if _, _, ok, code := verify(t, http.MethodGet, h); ok || code != http.StatusUnauthorized {
+			t.Errorf("%s: ok = %v, status = %d, want 401", name, ok, code)
 		}
 	}
 }
 
-func TestReadWithAWrongInternalTokenIsStillRejected(t *testing.T) {
-	_, ok, code := verify(t, http.MethodGet, map[string]string{internalServiceTokenHeader: "wrong"})
+// A service token is not a credential (PADR-0037), even with the old env var set.
+func TestInternalServiceTokenHeaderIsNoLongerAccepted(t *testing.T) {
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	_, _, ok, code := verify(t, http.MethodGet, map[string]string{"X-Internal-Service-Token": "test-internal-token", "X-Acting-User-Sub": "auth0|admin"})
 	if ok || code != http.StatusUnauthorized {
 		t.Errorf("ok = %v, status = %d, want 401", ok, code)
 	}

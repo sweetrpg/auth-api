@@ -11,12 +11,9 @@ import (
 )
 
 func TestListServicesReturnsTheRegistry(t *testing.T) {
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	stubAdminAuth(t)
 	r := newDenyStatsRouter(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/services", nil)
-	req.Header.Set(internalServiceTokenHeader, "test-internal-token")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := serve(r, withBearer(httptest.NewRequest(http.MethodGet, "/api/admin/services", nil), adminBearer))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
 	}
@@ -27,23 +24,22 @@ func TestListServicesReturnsTheRegistry(t *testing.T) {
 }
 
 func TestListServicesNeedsCredentials(t *testing.T) {
+	stubAdminAuth(t)
 	r := newDenyStatsRouter(t)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/admin/services", nil))
-	if rec.Code != http.StatusUnauthorized {
+	if rec := serve(r, httptest.NewRequest(http.MethodGet, "/api/admin/services", nil)); rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if rec := serve(r, withBearer(httptest.NewRequest(http.MethodGet, "/api/admin/services", nil), userBearer)); rec.Code != http.StatusForbidden {
+		t.Errorf("non-admin: status = %d, want 403", rec.Code)
 	}
 }
 
 func TestDenyEntryForAnUnknownServiceIsRejectedBeforeAnyWrite(t *testing.T) {
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	stubAdminAuth(t)
 	r := newDenyStatsRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/deny-entries/auth0%7Cabc", strings.NewReader(`{"service":"catalog-apii"}`))
-	req.Header.Set(internalServiceTokenHeader, "test-internal-token")
-	req.Header.Set(actingUserSubHeader, "auth0|admin")
 	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := serve(r, withBearer(req, adminBearer))
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"unknown_service"`) {
 		t.Errorf("status = %d, body %s", rec.Code, rec.Body)
 	}

@@ -39,21 +39,9 @@ had a Fluent relation to `User` that couldn't survive the split).
   end-user Auth0 token.
 - `admin-web`: the admin-gated role/service-access management UI. It composes `users-api`'s user
   list (id/email) with this service's `GET /api/admin/roles?subjects=...` bulk lookup, joined by
-  Auth0 subject - `auth-api` has no user list of its own to serve. Mutating routes
-  (`/api/admin/roles/:subject`, `/api/admin/deny-entries/:subject`) authenticate via
-  `X-Internal-Service-Token` (see "Internal service auth" below), since `admin-web` never holds
-  an Auth0 token of its own.
-
-### Internal service auth (`admin-web` → `RolesController`)
-
-`server/roles.go`'s `/api/admin/*` routes accept `X-Internal-Service-Token` (matching the
-`INTERNAL_SERVICE_TOKEN` env var, see `server/internal_auth_test.go`) as an alternative to an Auth0
-bearer token. `admin-web` uses this exclusively - it never holds an Auth0 access token (it reads
-`auth-web`'s shared session instead), so it can't present one to `/authz/check`'s or
-`RolesController`'s usual bearer-token path. Whoever holds this shared secret is trusted
-outright, on the assumption that `admin-web`'s own `AuthRequiredMiddleware` already verified the
-acting user has the `admin` role before ever making the call - `RolesController` doesn't
-re-derive who the acting admin is.
+  Auth0 subject - `auth-api` has no user list of its own to serve. Every `/api/admin/*` call carries
+  the signed-in admin's own bearer token, forwarded by `admin-web` (PADR-0037: there is no service
+  token; the former `X-Internal-Service-Token` branch and its secret were removed).
 
 ### Audit logging (fail-closed, before and after)
 
@@ -64,11 +52,9 @@ pre-action write itself fails, the mutation never runs - an admin action that ca
 not performed, no exceptions. `actingUserSub` and `targetSubject` are both raw Auth0 `sub`
 strings, not foreign keys.
 
-Internal-service-token callers must also send `X-Acting-User-Sub` on mutations (the acting
-admin's Auth0 `sub`, resolved by `admin-web` from the shared session) - `verifyAdminRole` rejects
-the request with 400 before touching the database if it's missing or empty, since the audit log
-needs to know who to attribute the action to. Read-only requests (GET, HEAD) need no header. Auth0 bearer-token callers don't need this header; their
-own verified token's subject is used instead.
+The acting administrator is the verified bearer token's subject, and a bearer-token caller's
+canonical user is resolved with that token; if it cannot be, the subject is recorded and the cause
+logged at ERROR.
 
 ### Roles and deny entries belong to the person
 
@@ -80,8 +66,7 @@ removes it for the person. `identity.Resolver` finds the user with a real user's
 (PADR-0037, no service token): `/authz/check` uses the caller's own token against users-api
 `GET /profile` (cached ~1 min; for the `users-api` service it uses the cache only, since users-api
 answers `/profile` by calling `/authz/check`); admin reads and writes use the administrator's
-forwarded bearer with `POST /internal/resolve-subjects`. With no token (an `X-Internal-Service-Token`
-caller) or when users-api is unreachable, the lookup falls back to the subject alone and logs a WARN.
+forwarded bearer with `POST /internal/resolve-subjects`. When users-api is unreachable, the lookup falls back to the subject alone and logs a WARN.
 New rows store both ids. Existing rows get `user_id` from the one-off
 `ADMIN_BEARER_TOKEN=... go run ./cmd/backfill-user-ids`, run as an admin user.
 The admin API still takes a subject in the path: pass any of the user's subjects.
@@ -138,7 +123,7 @@ what this doc used to say; confirmed the hard way when `auth-web`'s hardcoded de
 pointed at a Service that doesn't exist and broke login in dev). `DB_URI` (or the
 `DB_SCHEME`/`DB_HOST`/`DB_USER`/`DB_PW`/`DB_NAME`/`DB_OPTS` parts, its own `sweetrpg-auth`
 database via a dedicated `AtlasDatabaseUser`), `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (the one shared
-Auth0 application - see `auth-web`'s `AGENTS.md`), and `INTERNAL_SERVICE_TOKEN` all come from
+Auth0 application - see `auth-web`'s `AGENTS.md`) come from
 Akeyless via `ExternalSecret`s, not the configmap. This service holds no session store of its own
 - it's a stateless, bearer-token-only API.
 
