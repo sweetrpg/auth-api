@@ -76,10 +76,14 @@ own verified token's subject is used instead.
 and, once known, the canonical `user_id`. Every lookup (`/authz/check`, `verifyAdminRole`, the
 admin reads and writes) matches a row by `user_id` of the caller's user OR its `subject`, so a
 role or deny entry applies to all of a person's linked logins and removing it through any login
-removes it for the person. `identity.Resolver` asks users-api (`POST /internal/resolve-subjects`,
-shared internal token, cached ~1 min) for the user; when users-api is unreachable the lookup falls
-back to the subject alone and logs a WARN. New rows store both. At startup
-`BackfillUserIDsInBackground` sets `user_id` on rows written before this (idempotent, retries).
+removes it for the person. `identity.Resolver` finds the user with a real user's bearer token only
+(PADR-0037, no service token): `/authz/check` uses the caller's own token against users-api
+`GET /profile` (cached ~1 min; for the `users-api` service it uses the cache only, since users-api
+answers `/profile` by calling `/authz/check`); admin reads and writes use the administrator's
+forwarded bearer with `POST /internal/resolve-subjects`. With no token (an `X-Internal-Service-Token`
+caller) or when users-api is unreachable, the lookup falls back to the subject alone and logs a WARN.
+New rows store both ids. Existing rows get `user_id` from the one-off
+`ADMIN_BEARER_TOKEN=... go run ./cmd/backfill-user-ids`, run as an admin user.
 The admin API still takes a subject in the path: pass any of the user's subjects.
 
 ### Service registry

@@ -105,7 +105,6 @@ func main() {
 	r.Use(ratelimit.Middleware(redisPool, ratelimit.DefaultOptions()))
 
 	server.SetupHandlers(r, jwksCache, auth0Config)
-	server.BackfillUserIDsInBackground()
 
 	_ = r.Run(util.GetEnv(apiconstants.BIND_ADDRESS, ":8000"))
 }

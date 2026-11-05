@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sweetrpg/auth-api/auth0"
+	"github.com/sweetrpg/auth-api/constants"
 	"github.com/sweetrpg/auth-api/models"
 	"github.com/sweetrpg/common.go/logging"
 )
@@ -31,6 +32,7 @@ type authzErrorResponse struct {
 
 func setupAuthzHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Config) {
 	logging.Logger.Info("Setting up authz endpoint handlers...")
+	ensureUserResolver()
 
 	g.POST("/authz/check", func(c *gin.Context) { checkAuthz(c, cache, config) })
 }
@@ -76,7 +78,10 @@ func checkAuthz(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 	}
 
 	subject := claims.Subject
-	p := principal(c.Request.Context(), subject)
+	p := cachedPrincipal(subject)
+	if req.Service != constants.USERS_API_SERVICE {
+		p = ownPrincipal(c.Request.Context(), subject, token)
+	}
 
 	denied, err := models.HasDenyEntry(c.Request.Context(), p, req.Service)
 	if err != nil {

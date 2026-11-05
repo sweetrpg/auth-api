@@ -1,5 +1,7 @@
 // Package identity maps an Auth0 subject to the canonical user it belongs to, so roles and
-// deny entries follow the person across their linked logins.
+// deny entries follow the person across their linked logins. Every lookup uses a real user's
+// bearer token (PADR-0037): the caller's own for their own subject, an administrator's for
+// someone else's. There is no service credential.
 package identity
 
 import (
@@ -20,12 +22,15 @@ const (
 	maxBatch    = 200
 )
 
-// Resolver asks users-api (POST /internal/resolve-subjects, shared internal token) for the
-// canonical user ID of a subject, caching answers briefly because /authz/check calls it on every
-// request. A lookup that fails reports "" so callers fall back to the subject alone.
+// OwnLookup resolves the canonical user ID of the bearer token's own user (users-api GET
+// /profile); "" when it cannot.
+type OwnLookup func(ctx context.Context, token string) string
+
+// Resolver caches subject -> canonical user answers briefly because /authz/check asks on every
+// request. A failed or impossible lookup reports "" so callers fall back to the subject alone.
 type Resolver struct {
 	baseURL string
-	token   string
+	own     OwnLookup
 	http    *http.Client
 	now     func() time.Time
 
@@ -38,23 +43,56 @@ type entry struct {
 	expires time.Time
 }
 
-// New returns a Resolver. With an empty baseURL or token every lookup reports "".
-func New(baseURL, token string) *Resolver {
-	return &Resolver{
-		baseURL: baseURL, token: token, http: &http.Client{Timeout: 3 * time.Second},
-		now: time.Now, cache: map[string]entry{},
-	}
+// New returns a Resolver. baseURL is users-api's; own looks up a caller's own user.
+func New(baseURL string, own OwnLookup) *Resolver {
+	return &Resolver{baseURL: baseURL, own: own, http: &http.Client{Timeout: 3 * time.Second}, now: time.Now, cache: map[string]entry{}}
 }
 
-// UserID returns the canonical user ID for subject, or "" when unknown or unavailable.
-func (r *Resolver) UserID(ctx context.Context, subject string) string {
+// Cached returns a fresh cached answer for subject without any network call.
+func (r *Resolver) Cached(subject string) string {
+	if r == nil {
+		return ""
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.cache[subject]; ok && r.now().Before(e.expires) {
+		return e.userID
+	}
+	return ""
+}
+
+// Own returns the canonical user of the caller whose verified subject is subject, looked up with
+// the caller's own bearer token. "" when the token is missing or the lookup fails.
+func (r *Resolver) Own(ctx context.Context, subject, token string) string {
+	if r == nil || subject == "" || token == "" {
+		return ""
+	}
+	if e, ok := r.entry(subject); ok {
+		return e.userID
+	}
+	id := ""
+	if r.own != nil {
+		id = r.own(ctx, token)
+	}
+	r.store(subject, id)
+	return id
+}
+
+// Other returns the canonical user of someone else's subject, looked up with an administrator's
+// bearer token. "" when there is no admin token (a caller using another credential) or the
+// lookup fails, with a WARN so the gap is visible.
+func (r *Resolver) Other(ctx context.Context, subject, adminToken string) string {
 	if r == nil || subject == "" {
 		return ""
 	}
-	if id, ok := r.cached(subject); ok {
-		return id
+	if e, ok := r.entry(subject); ok {
+		return e.userID
 	}
-	resolved, err := r.Resolve(ctx, []string{subject})
+	if adminToken == "" {
+		logging.Logger.Warn("no admin bearer token to resolve the subject's canonical user; using the subject alone", "subject", subject)
+		return ""
+	}
+	resolved, err := r.Resolve(ctx, []string{subject}, adminToken)
 	if err != nil {
 		logging.Logger.Warn("could not resolve the subject's canonical user; using the subject alone", "subject", subject, "error", err.Error())
 		return ""
@@ -63,10 +101,14 @@ func (r *Resolver) UserID(ctx context.Context, subject string) string {
 	return resolved[subject]
 }
 
-// Resolve maps subjects to canonical user IDs; subjects with no user are absent from the result.
-func (r *Resolver) Resolve(ctx context.Context, subjects []string) (map[string]string, error) {
-	if r == nil || r.baseURL == "" || r.token == "" {
-		return nil, fmt.Errorf("users-api resolver not configured (USERS_API_URL and INTERNAL_SERVICE_TOKEN)")
+// Resolve maps subjects to canonical user IDs through users-api's POST /internal/resolve-subjects,
+// authorized by an administrator's bearer token. Subjects with no user are absent from the result.
+func (r *Resolver) Resolve(ctx context.Context, subjects []string, adminToken string) (map[string]string, error) {
+	if r == nil || r.baseURL == "" {
+		return nil, fmt.Errorf("USERS_API_URL is not configured")
+	}
+	if adminToken == "" {
+		return nil, fmt.Errorf("an administrator bearer token is required")
 	}
 	out := map[string]string{}
 	for start := 0; start < len(subjects); start += maxBatch {
@@ -80,14 +122,13 @@ func (r *Resolver) Resolve(ctx context.Context, subjects []string) (map[string]s
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Internal-Service-Token", r.token)
+		req.Header.Set("Authorization", "Bearer "+adminToken)
 		resp, err := r.http.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		var part map[string]string
-		err = decode(resp, &part)
-		if err != nil {
+		if err := decode(resp, &part); err != nil {
 			return nil, err
 		}
 		for k, v := range part {
@@ -105,14 +146,14 @@ func decode(resp *http.Response, v any) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-func (r *Resolver) cached(subject string) (string, bool) {
+func (r *Resolver) entry(subject string) (entry, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.cache[subject]
 	if !ok || !r.now().Before(e.expires) {
-		return "", false
+		return entry{}, false
 	}
-	return e.userID, true
+	return e, true
 }
 
 func (r *Resolver) store(subject, userID string) {
