@@ -56,9 +56,9 @@ func main() {
 		return
 	}
 
-	internalToken := util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "")
+	internalToken := util.GetEnv(constants.ADMIN_BEARER_TOKEN, "")
 	if internalToken == "" {
-		logging.Logger.Error("INTERNAL_SERVICE_TOKEN not configured, cannot call users-api")
+		logging.Logger.Error("ADMIN_BEARER_TOKEN not set: run as an admin user with a real bearer token (PADR-0037)")
 		return
 	}
 

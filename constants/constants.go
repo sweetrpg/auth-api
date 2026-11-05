@@ -19,6 +19,14 @@ const (
 	// USERS_API_URL is the base URL for users-api, used to resolve Auth0
 	// subjects to canonical users._id for audit attribution.
 	USERS_API_URL = "USERS_API_URL"
+
+	// USERS_API_SERVICE is the service name users-api passes to /authz/check. Resolving a caller's
+	// canonical user for that service must not call users-api back (see server/principal.go).
+	USERS_API_SERVICE = "users-api"
+
+	// ADMIN_BEARER_TOKEN is an administrator's own bearer token, read only by the one-off backfill
+	// commands under cmd/ (PADR-0037: jobs with no user in context run as an admin user).
+	ADMIN_BEARER_TOKEN = "ADMIN_BEARER_TOKEN"
 )
 
 // Value constants

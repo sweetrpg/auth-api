@@ -12,13 +12,14 @@ import (
 	"github.com/sweetrpg/common.go/logging"
 )
 
-func stub(t *testing.T, status int, answer map[string]string) (*httptest.Server, *atomic.Int32) {
+// usersAPI stands in for users-api's resolve-subjects; it accepts only the admin bearer.
+func usersAPI(t *testing.T, status int, answer map[string]string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	logging.Init()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.Header.Get("X-Internal-Service-Token") != "tok" {
+		if r.Header.Get("Authorization") != "Bearer admin-token" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -40,50 +41,87 @@ func stub(t *testing.T, status int, answer map[string]string) (*httptest.Server,
 	return srv, &calls
 }
 
-func TestUserIDResolvesAndCaches(t *testing.T) {
-	srv, calls := stub(t, http.StatusOK, map[string]string{"auth0|a": "u1"})
-	r := New(srv.URL, "tok")
+func counting(id string) (OwnLookup, *atomic.Int32) {
+	var calls atomic.Int32
+	return func(_ context.Context, token string) string {
+		calls.Add(1)
+		if token == "" {
+			return ""
+		}
+		return id
+	}, &calls
+}
+
+func TestOwnUsesTheCallersTokenAndCaches(t *testing.T) {
+	lookup, calls := counting("u1")
+	r := New("", lookup)
 	for i := 0; i < 3; i++ {
-		if got := r.UserID(context.Background(), "auth0|a"); got != "u1" {
-			t.Fatalf("UserID = %q", got)
+		if got := r.Own(context.Background(), "auth0|a", "user-token"); got != "u1" {
+			t.Fatalf("Own = %q", got)
 		}
 	}
+	if calls.Load() != 1 {
+		t.Errorf("lookups = %d, want 1 (cached)", calls.Load())
+	}
+	if r.Cached("auth0|a") != "u1" {
+		t.Error("Cached should return the stored answer")
+	}
+}
+
+func TestOwnWithoutATokenResolvesNothing(t *testing.T) {
+	lookup, calls := counting("u1")
+	if got := New("", lookup).Own(context.Background(), "auth0|a", ""); got != "" || calls.Load() != 0 {
+		t.Errorf("Own = %q after %d lookups, want empty and none", got, calls.Load())
+	}
+}
+
+func TestCacheExpires(t *testing.T) {
+	lookup, calls := counting("u1")
+	r := New("", lookup)
+	now := time.Now()
+	r.now = func() time.Time { return now }
+	r.Own(context.Background(), "auth0|a", "t")
+	now = now.Add(2 * time.Minute)
+	r.Own(context.Background(), "auth0|a", "t")
+	if calls.Load() != 2 {
+		t.Errorf("lookups = %d, want 2 after expiry", calls.Load())
+	}
+	if r.Cached("auth0|a") == "" {
+		t.Error("the refreshed entry should be cached")
+	}
+}
+
+func TestOtherUsesTheAdminBearer(t *testing.T) {
+	srv, calls := usersAPI(t, http.StatusOK, map[string]string{"auth0|b": "u2"})
+	r := New(srv.URL, nil)
+	if got := r.Other(context.Background(), "auth0|b", "admin-token"); got != "u2" {
+		t.Fatalf("Other = %q", got)
+	}
+	r.Other(context.Background(), "auth0|b", "admin-token")
 	if calls.Load() != 1 {
 		t.Errorf("calls = %d, want 1 (cached)", calls.Load())
 	}
 }
 
-func TestCacheExpires(t *testing.T) {
-	srv, calls := stub(t, http.StatusOK, map[string]string{"auth0|a": "u1"})
-	r := New(srv.URL, "tok")
-	now := time.Now()
-	r.now = func() time.Time { return now }
-	r.UserID(context.Background(), "auth0|a")
-	now = now.Add(2 * time.Minute)
-	r.UserID(context.Background(), "auth0|a")
-	if calls.Load() != 2 {
-		t.Errorf("calls = %d, want 2 after expiry", calls.Load())
+func TestOtherFallsBackToTheSubjectWhenItCannotResolve(t *testing.T) {
+	srv, calls := usersAPI(t, http.StatusOK, nil)
+	logging.Init()
+	if got := New(srv.URL, nil).Other(context.Background(), "auth0|x", ""); got != "" || calls.Load() != 0 {
+		t.Errorf("no admin token: %q after %d calls, want empty and no call", got, calls.Load())
 	}
-}
-
-func TestUnknownOrUnavailableReportsEmpty(t *testing.T) {
-	srv, _ := stub(t, http.StatusOK, nil)
-	if got := New(srv.URL, "tok").UserID(context.Background(), "auth0|x"); got != "" {
-		t.Errorf("unknown subject = %q", got)
-	}
-	down, _ := stub(t, http.StatusInternalServerError, nil)
-	if got := New(down.URL, "tok").UserID(context.Background(), "auth0|x"); got != "" {
-		t.Errorf("users-api error = %q", got)
-	}
-	if got := New(srv.URL, "wrong").UserID(context.Background(), "auth0|x"); got != "" {
+	if got := New(srv.URL, nil).Other(context.Background(), "auth0|x", "wrong"); got != "" {
 		t.Errorf("rejected token = %q", got)
 	}
-	if got := New("", "").UserID(context.Background(), "auth0|x"); got != "" {
+	down, _ := usersAPI(t, http.StatusInternalServerError, nil)
+	if got := New(down.URL, nil).Other(context.Background(), "auth0|x", "admin-token"); got != "" {
+		t.Errorf("users-api error = %q", got)
+	}
+	if got := New("", nil).Other(context.Background(), "auth0|x", "admin-token"); got != "" {
 		t.Errorf("unconfigured = %q", got)
 	}
 	var nilResolver *Resolver
-	if got := nilResolver.UserID(context.Background(), "auth0|x"); got != "" {
-		t.Errorf("nil resolver = %q", got)
+	if nilResolver.Own(context.Background(), "s", "t") != "" || nilResolver.Other(context.Background(), "s", "t") != "" || nilResolver.Cached("s") != "" {
+		t.Error("a nil resolver resolves nothing")
 	}
 }
 
@@ -95,9 +133,16 @@ func TestResolveBatchesLargeSubjectLists(t *testing.T) {
 		subjects = append(subjects, s)
 		answer[s] = "u" + s
 	}
-	srv, calls := stub(t, http.StatusOK, answer)
-	got, err := New(srv.URL, "tok").Resolve(context.Background(), subjects)
+	srv, calls := usersAPI(t, http.StatusOK, answer)
+	got, err := New(srv.URL, nil).Resolve(context.Background(), subjects, "admin-token")
 	if err != nil || len(got) != len(subjects) || calls.Load() != 3 {
 		t.Errorf("resolved %d of %d in %d calls, err %v", len(got), len(subjects), calls.Load(), err)
+	}
+}
+
+func TestResolveNeedsAnAdminToken(t *testing.T) {
+	srv, calls := usersAPI(t, http.StatusOK, nil)
+	if _, err := New(srv.URL, nil).Resolve(context.Background(), []string{"a"}, ""); err == nil || calls.Load() != 0 {
+		t.Errorf("err = %v after %d calls, want an error and no call", err, calls.Load())
 	}
 }
