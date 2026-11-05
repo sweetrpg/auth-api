@@ -1,3 +1,20 @@
+## [0.9.0] - 2026-11-05
+
+### 🚀 Features
+
+- *(roles)* Roles and deny entries belong to the person
+
+### 🐛 Bug Fixes
+
+- *(roles)* Look up users with bearer tokens, not a service token
+
+### 🧪 Testing
+
+- *(models)* Decode the unresolved row into a fresh value
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.8.0
 ## [0.8.0] - 2026-11-04
 
 ### 🚀 Features
