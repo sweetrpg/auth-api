@@ -7,10 +7,6 @@ const (
 	PYROSCOPE_SERVER_ADDRESS = "PYROSCOPE_SERVER_ADDRESS"
 	PYROSCOPE_TENANT_ID      = "PYROSCOPE_TENANT_ID"
 
-	// INTERNAL_SERVICE_TOKEN gates the /api/admin/* routes; see
-	// server.hasValidInternalServiceToken.
-	INTERNAL_SERVICE_TOKEN = "INTERNAL_SERVICE_TOKEN"
-
 	// AUTH0_DOMAIN and AUTH0_AUDIENCE configure the Auth0 tenant this service
 	// verifies bearer tokens against; see auth0.ConfigFromEnvironment.
 	AUTH0_DOMAIN   = "AUTH0_DOMAIN"

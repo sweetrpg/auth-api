@@ -4,62 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/sweetrpg/auth-api/auth0"
 	"github.com/sweetrpg/auth-api/models"
-	"github.com/sweetrpg/common.go/logging"
 )
-
-// TestMissingActingUserSubIsRejectedBeforeAnyDatabaseAccess and
-// TestMismatchedInternalTokenIsUnauthorizedBeforeAnyDatabaseAccess port
-// RolesControllerAuditTests.swift: verifyAdminRole requires
-// X-Acting-User-Sub for internal-service-token callers before it ever
-// reaches a query or an audit-log write, and rejects a mismatched token -
-// neither case touches the database, so these run without one.
-func TestMissingActingUserSubIsRejectedBeforeAnyDatabaseAccess(t *testing.T) {
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
-	logging.Init()
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	cache := auth0.NewJWKSCache()
-	config := auth0.Config{Domain: "test.auth0.dev", Audience: "test-audience"}
-	setupRolesHandlers(r, cache, config)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/roles/auth0%7Cabc123", strings.NewReader(`{"role":"admin"}`))
-	req.Header.Set(internalServiceTokenHeader, "test-internal-token")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
-}
-
-func TestMismatchedInternalTokenIsUnauthorizedBeforeAnyDatabaseAccess(t *testing.T) {
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
-	logging.Init()
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	cache := auth0.NewJWKSCache()
-	config := auth0.Config{Domain: "test.auth0.dev", Audience: "test-audience"}
-	setupRolesHandlers(r, cache, config)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/roles/auth0%7Cabc123", strings.NewReader(`{"role":"admin"}`))
-	req.Header.Set(internalServiceTokenHeader, "wrong-token")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
-	}
-}
 
 // TestPerformAuditedRefusesOperationWhenAuditWriteFails verifies the
 // fail-closed contract design.md calls out as security-critical: if the

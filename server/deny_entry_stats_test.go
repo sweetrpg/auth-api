@@ -31,16 +31,11 @@ func TestDenyEntryStats_RejectsMissingCredentials(t *testing.T) {
 	}
 }
 
-func TestDenyEntryStats_RejectsMismatchedInternalToken(t *testing.T) {
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+func TestDenyEntryStats_RejectsANonAdmin(t *testing.T) {
+	stubAdminAuth(t)
 	r := newDenyStatsRouter(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/deny-entries/stats", nil)
-	req.Header.Set(internalServiceTokenHeader, "wrong-token")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	rec := serve(r, withBearer(httptest.NewRequest(http.MethodGet, "/api/admin/deny-entries/stats", nil), userBearer))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
