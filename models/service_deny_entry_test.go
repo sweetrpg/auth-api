@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 
 func addDenyFixture(t *testing.T, subject, service string) {
 	t.Helper()
-	if err := AddDenyEntry(context.Background(), subject, service, "test-actor"); err != nil {
+	if err := AddDenyEntry(context.Background(), Principal{Subject: subject}, service, "test-actor"); err != nil {
 		t.Fatalf("seed deny entry %s/%s: %v", subject, service, err)
 	}
 	t.Cleanup(func() {

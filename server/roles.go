@@ -48,6 +48,7 @@ func setupRolesHandlers(g *gin.Engine, cache *auth0.JWKSCache, config auth0.Conf
 	logging.Logger.Info("Setting up admin roles endpoint handlers...")
 
 	usersBaseURL := util.GetEnv(constants.USERS_API_URL, "")
+	userResolver = newUserResolver()
 	authzClient := authz.NewClient("", usersBaseURL)
 
 	group := g.Group("/api/admin")
@@ -193,11 +194,11 @@ func getSubject(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config) {
 }
 
 func buildSummary(ctx context.Context, subject string) (subjectRolesSummary, error) {
-	roles, err := models.ListRolesForSubject(ctx, subject)
+	roles, err := models.ListRolesFor(ctx, principal(ctx, subject))
 	if err != nil {
 		return subjectRolesSummary{}, err
 	}
-	denials, err := models.ListDenyEntriesForSubject(ctx, subject)
+	denials, err := models.ListDenyEntriesFor(ctx, principal(ctx, subject))
 	if err != nil {
 		return subjectRolesSummary{}, err
 	}
@@ -249,6 +250,7 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzC
 	}
 
 	subject := c.Param("subject")
+	p := principal(c.Request.Context(), subject)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -266,14 +268,14 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzC
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "add_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
-			exists, err := models.HasRole(ctx, subject, role)
+			exists, err := models.HasRole(ctx, p, role)
 			if err != nil {
 				return 0, err
 			}
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddRole(ctx, subject, role, actingUserID); err != nil {
+			if err := models.AddRole(ctx, p, role, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -315,6 +317,7 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 	}
 
 	subject := c.Param("subject")
+	p := principal(c.Request.Context(), subject)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -327,7 +330,7 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "remove_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
-			if err := models.RemoveRole(ctx, subject, role); err != nil {
+			if err := models.RemoveRole(ctx, p, role); err != nil {
 				return 0, err
 			}
 			return http.StatusNoContent, nil
@@ -371,6 +374,7 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 	}
 
 	subject := c.Param("subject")
+	p := principal(c.Request.Context(), subject)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -388,14 +392,14 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "add_deny_entry", subject, req.Service,
 		func(ctx context.Context) (int, error) {
-			exists, err := models.HasDenyEntry(ctx, subject, req.Service)
+			exists, err := models.HasDenyEntry(ctx, p, req.Service)
 			if err != nil {
 				return 0, err
 			}
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddDenyEntry(ctx, subject, req.Service, actingUserID); err != nil {
+			if err := models.AddDenyEntry(ctx, p, req.Service, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -437,6 +441,7 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 	}
 
 	subject := c.Param("subject")
+	p := principal(c.Request.Context(), subject)
 	if subject == "" {
 		c.JSON(http.StatusBadRequest, apiv.ErrorVO{Error: "invalid_request", Message: "invalid subject"})
 		return
@@ -449,7 +454,7 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 
 	status, err := performAudited(c.Request.Context(), actingUserID, "remove_deny_entry", subject, service,
 		func(ctx context.Context) (int, error) {
-			if err := models.RemoveDenyEntry(ctx, subject, service); err != nil {
+			if err := models.RemoveDenyEntry(ctx, p, service); err != nil {
 				return 0, err
 			}
 			return http.StatusNoContent, nil
@@ -541,7 +546,7 @@ func verifyAdminRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 		return "", "", false
 	}
 
-	roles, err := models.ListRolesForSubject(c.Request.Context(), claims.Subject)
+	roles, err := models.ListRolesFor(c.Request.Context(), principal(c.Request.Context(), claims.Subject))
 	if err != nil {
 		logging.Logger.Error("Failed to look up roles", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "query_failed", Message: "failed to verify admin role"})
