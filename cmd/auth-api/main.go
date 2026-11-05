@@ -77,8 +77,6 @@ func main() {
 
 	setupCORS(r)
 
-	checkInternalServiceTokenConfig()
-
 	setupMetrics(r)
 
 	database.SetupDatabase()
@@ -117,16 +115,6 @@ func setupSwagger(r *gin.Engine) {
 	docs.SwaggerInfo.BasePath = util.GetEnv(apiconstants.INGRESS_BASE_PATH, "/")
 	docs.SwaggerInfo.Schemes = strings.Split(util.GetEnv(apiconstants.INGRESS_SCHEMES, "http"), ",")
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
-}
-
-// checkInternalServiceTokenConfig warns at startup if INTERNAL_SERVICE_TOKEN
-// is unset, since that permanently disables the internal-service-token path
-// on /api/admin/* (every such request falls through to the Auth0
-// bearer-token check) rather than silently trusting an empty token.
-func checkInternalServiceTokenConfig() {
-	if util.GetEnv(constants.INTERNAL_SERVICE_TOKEN, "") == "" {
-		logging.Logger.Warn("INTERNAL_SERVICE_TOKEN not set, /api/admin/* will only accept Auth0 bearer tokens with the admin role")
-	}
 }
 
 func setupCORS(r *gin.Engine) {
