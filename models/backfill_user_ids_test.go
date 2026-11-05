@@ -75,8 +75,9 @@ func TestBackfillSetsUserIDOnLegacyRowsOnce(t *testing.T) {
 	if err := database.Db.Collection(constants.UserRolesCollection).FindOne(ctx, bson.D{{Key: "subject", Value: known}}).Decode(&doc); err != nil || doc.UserID != "user-"+run {
 		t.Errorf("known subject's row: user_id = %q, err %v", doc.UserID, err)
 	}
-	if err := database.Db.Collection(constants.UserRolesCollection).FindOne(ctx, bson.D{{Key: "subject", Value: unknown}}).Decode(&doc); err != nil || doc.UserID != "" {
-		t.Errorf("unknown subject's row: user_id = %q, err %v", doc.UserID, err)
+	var unresolved UserRole
+	if err := database.Db.Collection(constants.UserRolesCollection).FindOne(ctx, bson.D{{Key: "subject", Value: unknown}}).Decode(&unresolved); err != nil || unresolved.UserID != "" {
+		t.Errorf("unknown subject's row: user_id = %q, err %v", unresolved.UserID, err)
 	}
 	// the matching row follows the person from a login the backfill never saw
 	if ok, _ := HasRole(ctx, Principal{Subject: "other|" + run, UserID: "user-" + run}, RoleAdmin); !ok {
