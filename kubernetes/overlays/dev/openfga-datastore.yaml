@@ -1,0 +1,22 @@
+# OpenFGA's Postgres datastore, an external database (not Atlas). Akeyless item
+# /sweetrpg/auth/openfga/datastore holds username, password, host, port, database, sslmode.
+# The composed URI is consumed by the OpenFGA Deployment in openfga.yaml.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: openfga-datastore
+spec:
+  refreshInterval: 12h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: akeyless
+  target:
+    name: openfga-datastore
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      data:
+        OPENFGA_DATASTORE_URI: "postgres://{{ .username }}:{{ .password | urlquery }}@{{ .host }}:{{ .port }}/{{ .database }}?sslmode={{ .sslmode }}"
+  dataFrom:
+    - extract:
+        key: /sweetrpg/auth/openfga/datastore

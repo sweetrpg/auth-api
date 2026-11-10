@@ -13,15 +13,19 @@ const (
 	RoleModerator Role = "moderator"
 	RoleApprover  Role = "approver"
 	RoleAdmin     Role = "admin"
+	// RoleOpenFGAWriter lets a caller read and write OpenFGA relationship tuples (PADR-0038).
+	// Granted only to dedicated job accounts; admin does not imply it.
+	RoleOpenFGAWriter Role = "openfga-writer"
 )
 
 var validRoles = map[Role]struct{}{
-	RoleUser:      {},
-	RoleSubmitter: {},
-	RoleEditor:    {},
-	RoleModerator: {},
-	RoleApprover:  {},
-	RoleAdmin:     {},
+	RoleUser:          {},
+	RoleSubmitter:     {},
+	RoleEditor:        {},
+	RoleModerator:     {},
+	RoleApprover:      {},
+	RoleAdmin:         {},
+	RoleOpenFGAWriter: {},
 }
 
 // ParseRole validates s against the platform's fixed role model.

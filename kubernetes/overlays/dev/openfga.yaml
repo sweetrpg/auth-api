@@ -1,0 +1,88 @@
+# OpenFGA authorization server for auth-api (evaluate-openfga-authorization, dev). The migrate
+# init container applies datastore migrations before the server starts. Only auth-api calls it,
+# over in-cluster DNS. Selectors use com.sweetrpg/workload because the overlay's common labels
+# overwrite app.kubernetes.io/name and component on pod templates.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfga
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      com.sweetrpg/workload: openfga
+  template:
+    metadata:
+      labels:
+        com.sweetrpg/workload: openfga
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: openfga/openfga:v1.22.1
+          args: ["migrate", "--datastore-engine", "postgres"]
+          env:
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: openfga-datastore
+                  key: OPENFGA_DATASTORE_URI
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: openfga
+          image: openfga/openfga:v1.22.1
+          args: ["run"]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: openfga-datastore
+                  key: OPENFGA_DATASTORE_URI
+            - name: OPENFGA_PLAYGROUND_ENABLED
+              value: "false"
+            - name: OPENFGA_LOG_FORMAT
+              value: json
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga
+spec:
+  selector:
+    com.sweetrpg/workload: openfga
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

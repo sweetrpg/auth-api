@@ -27,6 +27,7 @@ import (
 	"github.com/sweetrpg/auth-api/auth0"
 	"github.com/sweetrpg/auth-api/constants"
 	"github.com/sweetrpg/auth-api/docs"
+	"github.com/sweetrpg/auth-api/fga"
 	"github.com/sweetrpg/auth-api/server"
 	"github.com/sweetrpg/common.go/logging"
 	"github.com/sweetrpg/common.go/util"
@@ -103,8 +104,30 @@ func main() {
 	r.Use(ratelimit.Middleware(redisPool, ratelimit.DefaultOptions()))
 
 	server.SetupHandlers(r, jwksCache, auth0Config)
+	server.SetupFGAHandlers(r, jwksCache, auth0Config, setupFGAStore())
 
 	_ = r.Run(util.GetEnv(apiconstants.BIND_ADDRESS, ":8000"))
+}
+
+// setupFGAStore bootstraps the OpenFGA store and model and returns the client. A misconfigured or
+// unreachable OpenFGA fails startup, so the pod restarts rather than serving checks it cannot make.
+func setupFGAStore() fga.Store {
+	cfg, err := fga.ConfigFromEnvironment()
+	if err != nil {
+		logging.Logger.Error("OpenFGA configuration invalid", "error", err.Error())
+		os.Exit(1)
+	}
+	boot, err := fga.Bootstrap(context.Background(), cfg.APIURL, cfg.StoreName)
+	if err != nil {
+		logging.Logger.Error("OpenFGA bootstrap failed", "error", err.Error())
+		os.Exit(1)
+	}
+	client, err := fga.NewClient(cfg.APIURL, boot.StoreID, boot.ModelID)
+	if err != nil {
+		logging.Logger.Error("OpenFGA client setup failed", "error", err.Error())
+		os.Exit(1)
+	}
+	return client
 }
 
 func setupSwagger(r *gin.Engine) {
