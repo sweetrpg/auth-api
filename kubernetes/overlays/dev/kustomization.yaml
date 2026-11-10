@@ -7,6 +7,8 @@ resources:
     - ../../base
     - atlas-db-user.yaml
     - configmaps.yaml
+    - openfga.yaml
+    - openfga-datastore.yaml
     - pod-monitor.yaml
     - secrets/cache.yaml
     - secrets/db-creds.yaml

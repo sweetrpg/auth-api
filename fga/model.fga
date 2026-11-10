@@ -1,0 +1,24 @@
+model
+  schema 1.1
+
+# Platform roles, expressed as relations on the platform object. Mirrors models/role.go.
+type user
+
+type platform
+  relations
+    define user: [user]
+    define submitter: [user]
+    define editor: [user]
+    define moderator: [user]
+    define approver: [user]
+    define admin: [user]
+    define openfga-writer: [user]
+
+# Volume edit approval (volume-edit-approval workflow). Scoped per volume-edit object.
+type volume-edit
+  relations
+    define submitter: [user]
+    define approver: [user]
+
+# Consumer sections below. Initiative! types (session, encounter) are added by
+# initiative-platform task 1.7.
