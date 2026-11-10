@@ -1,6 +1,6 @@
 module github.com/sweetrpg/auth-api
 
-go 1.26.5
+go 1.26.10
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.1
