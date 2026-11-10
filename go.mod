@@ -1,6 +1,6 @@
 module github.com/sweetrpg/auth-api
 
-go 1.26.5
+go 1.26.10
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.1
@@ -11,6 +11,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.4.1
 	github.com/joho/godotenv v1.5.1
+	github.com/openfga/go-sdk v0.8.3
+	github.com/openfga/language/pkg/go v0.3.2
 	github.com/penglongli/gin-metrics v0.1.13
 	github.com/samber/slog-gin v1.21.1
 	github.com/sinhashubham95/go-actuator v1.6.0
@@ -33,6 +35,7 @@ require (
 	connectrpc.com/otelconnect v0.7.2 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/MicahParks/jwkset v0.11.1 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.2.0 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
@@ -42,6 +45,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/diegoholiveira/jsonlogic/v3 v3.9.1 // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
@@ -80,6 +84,7 @@ require (
 	github.com/open-feature/flagd/core v0.16.0 // indirect
 	github.com/open-feature/go-sdk v1.17.2 // indirect
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.6.0 // indirect
+	github.com/openfga/api/proto v0.0.0-20260319214821-f153694bfc20 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
@@ -89,6 +94,7 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
@@ -113,7 +119,7 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/arch v0.27.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
@@ -123,7 +129,7 @@ require (
 	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

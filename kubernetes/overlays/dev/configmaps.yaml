@@ -20,6 +20,8 @@ data:
   # token) so roles and deny entries follow the person across linked logins.
   USERS_API_URL: http://api-v1.sweetrpg-users.svc.cluster.local:8000
   BUILD_INFO_PATH: /app/config/build-info.json
+  # OpenFGA relationship checks and tuple reads/writes (openfga.yaml, same namespace).
+  OPENFGA_API_URL: http://openfga.sweetrpg-auth.svc.cluster.local:8080
   LOG_LEVEL: info
   OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo-distributor.observability.svc.cluster.local:4318/
   # Per-client/IP rate limiting (platform rate-limiting capability, #106). Looser posture per
