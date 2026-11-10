@@ -1,3 +1,13 @@
+## [0.11.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(authz)* Add OpenFGA check-relation and internal tuple endpoints
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.10.0
+- Update Go to 1.26.10
 ## [0.10.0] - 2026-11-05
 
 ### 🚀 Features
