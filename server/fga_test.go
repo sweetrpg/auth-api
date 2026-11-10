@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,11 +54,19 @@ func stubFGAAuth(t *testing.T) {
 			return "auth0|job", nil
 		case "user-bearer":
 			return "auth0|user", nil
+		case "user-second-login-bearer":
+			return "google-oauth2|user", nil
+		case "orphan-bearer":
+			return "auth0|orphan", nil
 		}
 		return "", errors.New("bad token")
 	}
 	holdsWriterRole = func(_ context.Context, p models.Principal) (bool, error) { return p.Subject == "auth0|job", nil }
-	principalFor = func(_ context.Context, subject, _ string) models.Principal { return models.Principal{Subject: subject} }
+	// Both of one person's logins resolve to the same canonical user; orphan has none.
+	userIDs := map[string]string{"auth0|user": "u-1", "google-oauth2|user": "u-1", "auth0|job": "u-job"}
+	principalFor = func(_ context.Context, subject, _ string) models.Principal {
+		return models.Principal{Subject: subject, UserID: userIDs[subject]}
+	}
 	auditedWrite = func(ctx context.Context, _ string, _ string, _ string, _ string, op func(context.Context) (int, error)) (int, error) {
 		return op(ctx)
 	}
@@ -114,19 +123,36 @@ func TestCheckRelation(t *testing.T) {
 	}
 }
 
-func TestCheckRelationUsesSubjectAsUser(t *testing.T) {
+func checkAs(t *testing.T, bearer string, store *fakeStore) int {
+	t.Helper()
+	req := withBearer(httptest.NewRequest(http.MethodPost, "/authz/check-relation", strings.NewReader(`{"object":"volume-edit:1","relation":"submitter"}`)), bearer)
+	return serve(fgaEngine(store), req).Code
+}
+
+func TestCheckRelationKeysOnCanonicalUser(t *testing.T) {
 	stubFGAAuth(t)
 	store := &fakeStore{allowed: true}
-	req := withBearer(httptest.NewRequest(http.MethodPost, "/authz/check-relation", strings.NewReader(`{"object":"volume-edit:1","relation":"submitter"}`)), "user-bearer")
-	serve(fgaEngine(store), req)
-	if len(store.checks) != 1 || store.checks[0].User != "user:auth0|user" {
-		t.Fatalf("checks = %+v, want user:auth0|user", store.checks)
+	checkAs(t, "user-bearer", store)
+	checkAs(t, "user-second-login-bearer", store)
+	if len(store.checks) != 2 || store.checks[0] != store.checks[1] || store.checks[0].User != "user:u-1" {
+		t.Fatalf("checks = %+v, want both logins to check user:u-1", store.checks)
+	}
+}
+
+func TestCheckRelationFailsClosedWithoutCanonicalUser(t *testing.T) {
+	stubFGAAuth(t)
+	store := &fakeStore{allowed: true}
+	if code := checkAs(t, "orphan-bearer", store); code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", code)
+	}
+	if len(store.checks) != 0 {
+		t.Errorf("store was queried %d times for an unresolved user", len(store.checks))
 	}
 }
 
 func TestTupleWriteRequiresWriterRole(t *testing.T) {
 	stubFGAAuth(t)
-	body := `{"writes":[{"user":"user:a","relation":"approver","object":"volume-edit:1"}]}`
+	body := `{"writes":[{"user":"user:u-1","relation":"approver","object":"volume-edit:1"}]}`
 	cases := []struct {
 		name       string
 		bearer     string
@@ -155,7 +181,7 @@ func TestTupleWriteRequiresWriterRole(t *testing.T) {
 func TestTupleWriteFailureReturnsUnavailable(t *testing.T) {
 	stubFGAAuth(t)
 	store := &fakeStore{err: errors.New("transaction rolled back")}
-	body := `{"writes":[{"user":"user:a","relation":"approver","object":"volume-edit:1"}]}`
+	body := `{"writes":[{"user":"user:u-1","relation":"approver","object":"volume-edit:1"}]}`
 	req := withBearer(httptest.NewRequest(http.MethodPost, "/internal/openfga/tuples", strings.NewReader(body)), "writer-bearer")
 	if rec := serve(fgaEngine(store), req); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
@@ -172,7 +198,7 @@ func TestTupleWriteRejectsEmptyBatch(t *testing.T) {
 
 func TestTupleReadRequiresWriterRole(t *testing.T) {
 	stubFGAAuth(t)
-	store := &fakeStore{readPage: []fga.Tuple{{User: "user:a", Relation: "approver", Object: "volume-edit:1"}}}
+	store := &fakeStore{readPage: []fga.Tuple{{User: "user:u-1", Relation: "approver", Object: "volume-edit:1"}}}
 
 	denied := withBearer(httptest.NewRequest(http.MethodGet, "/internal/openfga/tuples?object=volume-edit:1", nil), "user-bearer")
 	if rec := serve(fgaEngine(store), denied); rec.Code != http.StatusForbidden {
@@ -205,5 +231,53 @@ func TestParsePageSize(t *testing.T) {
 				t.Errorf("parsePageSize(%q) = %d, %v; want %d, %v", tc.in, got, ok, tc.want, tc.ok)
 			}
 		})
+	}
+}
+
+func postTuples(t *testing.T, store *fakeStore, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := withBearer(httptest.NewRequest(http.MethodPost, "/internal/openfga/tuples", strings.NewReader(body)), "writer-bearer")
+	return serve(fgaEngine(store), req)
+}
+
+func TestTupleWriteMapsStoreErrors(t *testing.T) {
+	stubFGAAuth(t)
+	body := `{"writes":[{"user":"user:u-1","relation":"approver","object":"volume-edit:1"}]}`
+	cases := map[string]struct {
+		err  error
+		want int
+	}{
+		"invalid batch":     {err: fmt.Errorf("%w: unknown relation", fga.ErrInvalid), want: http.StatusBadRequest},
+		"conflict":          {err: fga.ErrConflict, want: http.StatusConflict},
+		"transport failure": {err: errors.New("openfga write failed"), want: http.StatusServiceUnavailable},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if rec := postTuples(t, &fakeStore{err: tc.err}, body); rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+			}
+		})
+	}
+}
+
+func TestTupleWriteRejectsLoginKeyedUsers(t *testing.T) {
+	stubFGAAuth(t)
+	for _, user := range []string{"user:auth0|abc", "approver:u-1", "user:", "user:*", "user:u-1#member"} {
+		body := `{"writes":[{"user":"` + user + `","relation":"approver","object":"volume-edit:1"}]}`
+		store := &fakeStore{}
+		if rec := postTuples(t, store, body); rec.Code != http.StatusBadRequest || len(store.written) != 0 {
+			t.Errorf("user %q: status = %d, written = %d; want 400 and no write", user, rec.Code, len(store.written))
+		}
+	}
+}
+
+func TestAuditDetailListsTuples(t *testing.T) {
+	got := auditDetail(tupleWriteRequest{
+		Writes:  []fga.Tuple{{User: "user:u-1", Relation: "approver", Object: "volume-edit:1"}},
+		Deletes: []fga.Tuple{{User: "user:u-2", Relation: "submitter", Object: "volume-edit:2"}},
+	})
+	want := "writes=1 deletes=1; +user:u-1 approver volume-edit:1; -user:u-2 submitter volume-edit:2"
+	if got != want {
+		t.Errorf("auditDetail = %q, want %q", got, want)
 	}
 }
