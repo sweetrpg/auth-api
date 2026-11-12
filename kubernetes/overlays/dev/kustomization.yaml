@@ -9,6 +9,7 @@ resources:
     - configmaps.yaml
     - openfga.yaml
     - openfga-datastore.yaml
+    - nats.yaml
     - pod-monitor.yaml
     - secrets/cache.yaml
     - secrets/db-creds.yaml

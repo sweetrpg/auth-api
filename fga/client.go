@@ -2,9 +2,22 @@ package fga
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 
+	fgasdk "github.com/openfga/go-sdk"
 	openfga "github.com/openfga/go-sdk/client"
+	"github.com/sweetrpg/common.go/logging"
+)
+
+// Write failures a caller can act on. Anything else is a transport or server failure.
+var (
+	// ErrInvalid means OpenFGA rejected the batch: an unknown relation, a tuple that violates the
+	// model, or a malformed key. Retrying the same batch cannot succeed.
+	ErrInvalid = errors.New("openfga rejected the tuple batch")
+	// ErrConflict means the batch conflicts with stored state (HTTP 409).
+	ErrConflict = errors.New("openfga tuple batch conflicts with stored state")
 )
 
 // Tuple is one relationship: User has Relation on Object, e.g. user:alice approver volume-edit:1234.
@@ -54,16 +67,36 @@ func (c *Client) Check(ctx context.Context, t Tuple) (bool, error) {
 }
 
 // Write applies writes and deletes in one OpenFGA request. The SDK sends it as a single
-// transaction by default, so a failure applies none of them.
+// transaction by default, so a failure applies none of them. Writing a tuple that already exists
+// and deleting one that does not are ignored, so a reconciliation can resend a batch safely.
+// A rejected batch returns ErrInvalid or ErrConflict; the returned text carries no OpenFGA
+// response detail because the caller stores it in the audit log.
 func (c *Client) Write(ctx context.Context, writes, deletes []Tuple) error {
 	body := openfga.ClientWriteRequest{
 		Writes:  toClientKeys(writes),
 		Deletes: toClientDeletes(deletes),
 	}
-	if _, err := c.sdk.Write(ctx).Body(body).Execute(); err != nil {
-		return fmt.Errorf("openfga write: %w", err)
+	opts := openfga.ClientWriteOptions{Conflict: openfga.ClientWriteConflictOptions{
+		OnDuplicateWrites: openfga.CLIENT_WRITE_REQUEST_ON_DUPLICATE_WRITES_IGNORE,
+		OnMissingDeletes:  openfga.CLIENT_WRITE_REQUEST_ON_MISSING_DELETES_IGNORE,
+	}}
+	if _, err := c.sdk.Write(ctx).Body(body).Options(opts).Execute(); err != nil {
+		logging.Logger.Error("OpenFGA write failed", "error", err.Error())
+		return classifyWriteError(err)
 	}
 	return nil
+}
+
+func classifyWriteError(err error) error {
+	var validation fgasdk.FgaApiValidationError
+	if errors.As(err, &validation) {
+		return fmt.Errorf("%w: %s", ErrInvalid, validation.ResponseCode())
+	}
+	var api fgasdk.FgaApiError
+	if errors.As(err, &api) && api.ResponseStatusCode() == http.StatusConflict {
+		return ErrConflict
+	}
+	return errors.New("openfga write failed")
 }
 
 // Read returns one page of tuples on object and the continuation token for the next page, empty
@@ -86,6 +119,9 @@ func (c *Client) Read(ctx context.Context, object string, pageSize int32, contin
 }
 
 func toClientKeys(ts []Tuple) []openfga.ClientTupleKey {
+	if len(ts) == 0 {
+		return nil
+	}
 	keys := make([]openfga.ClientTupleKey, 0, len(ts))
 	for _, t := range ts {
 		keys = append(keys, openfga.ClientTupleKey{User: t.User, Relation: t.Relation, Object: t.Object})
@@ -94,6 +130,9 @@ func toClientKeys(ts []Tuple) []openfga.ClientTupleKey {
 }
 
 func toClientDeletes(ts []Tuple) []openfga.ClientTupleKeyWithoutCondition {
+	if len(ts) == 0 {
+		return nil
+	}
 	keys := make([]openfga.ClientTupleKeyWithoutCondition, 0, len(ts))
 	for _, t := range ts {
 		keys = append(keys, openfga.ClientTupleKeyWithoutCondition{User: t.User, Relation: t.Relation, Object: t.Object})

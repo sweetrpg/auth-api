@@ -1,0 +1,23 @@
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+
+metadata:
+  name: auth-api-nats
+
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: akeyless
+    kind: ClusterSecretStore
+  target:
+    name: api-nats
+    creationPolicy: Owner
+  dataFrom:
+    # NATS user auth-api (flux configs/nats). Same Akeyless value the NATS broker reads.
+    - extract:
+        key: /sweetrpg/auth/api/nats/auth
+      rewrite:
+        - regexp:
+            source: "password"
+            target: NATS_PASSWORD

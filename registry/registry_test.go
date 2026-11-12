@@ -3,7 +3,7 @@ package registry
 import "testing"
 
 func TestRegistryHasTheExpectedServices(t *testing.T) {
-	want := []string{"admin-api", "auth-api", "catalog-api", "entitlements-api", "game-room-api", "game-systems-api", "users-api"}
+	want := []string{"admin-api", "auth-api", "catalog-api", "entitlements-api", "game-room-api", "game-systems-api", "initiative-api", "users-api"}
 	got := Services()
 	if len(got) != len(want) {
 		t.Fatalf("services = %v", got)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -87,9 +88,18 @@ func (h fgaHandlers) checkRelation(c *gin.Context) {
 		invalidTokenResponse(c)
 		return
 	}
+	// Tuples belong to the person, so the check is keyed on the canonical user ID. Without one
+	// (users-api unreachable, or the login has no user) the answer would depend on which login
+	// was used, so fail closed.
+	userID := principalFor(c.Request.Context(), subject, token).UserID
+	if userID == "" {
+		logging.Logger.Warn("OpenFGA check denied; canonical user unresolved", "subject", subject)
+		c.JSON(http.StatusServiceUnavailable, authzErrorResponse{Error: authzUnavailable})
+		return
+	}
 
 	allowed, err := h.store.Check(c.Request.Context(), fga.Tuple{
-		User: userPrincipalType + subject, Relation: req.Relation, Object: req.Object,
+		User: userPrincipalType + userID, Relation: req.Relation, Object: req.Object,
 	})
 	if err != nil {
 		logging.Logger.Error("OpenFGA check failed; denying", "object", req.Object, "relation", req.Relation, "error", err.Error())
@@ -112,13 +122,20 @@ func (h fgaHandlers) writeTuples(c *gin.Context) {
 		return
 	}
 
-	detail := "writes=" + strconv.Itoa(len(req.Writes)) + " deletes=" + strconv.Itoa(len(req.Deletes))
+	detail := auditDetail(req)
 	_, err := auditedWrite(c.Request.Context(), subject, fgaWriteAction, "", detail, func(ctx context.Context) (int, error) {
 		return http.StatusOK, h.store.Write(ctx, req.Writes, req.Deletes)
 	})
 	if err != nil {
-		logging.Logger.Error("OpenFGA tuple write failed", "detail", detail, "error", err.Error())
-		c.JSON(http.StatusServiceUnavailable, authzErrorResponse{Error: authzUnavailable})
+		logging.Logger.Error("OpenFGA tuple write failed", "error", err.Error())
+		switch {
+		case errors.Is(err, fga.ErrInvalid):
+			c.JSON(http.StatusBadRequest, authzErrorResponse{Error: "invalid_tuples"})
+		case errors.Is(err, fga.ErrConflict):
+			c.JSON(http.StatusConflict, authzErrorResponse{Error: "tuple_conflict"})
+		default:
+			c.JSON(http.StatusServiceUnavailable, authzErrorResponse{Error: authzUnavailable})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"writes": len(req.Writes), "deletes": len(req.Deletes)})
@@ -181,13 +198,34 @@ func validObject(s string) bool {
 	return ok && typ != "" && id != "" && !strings.ContainsAny(s, " \t\n#")
 }
 
+// auditDetail lists every tuple in the batch (at most maxTupleBatch), so the audit log shows which
+// relationships changed.
+func auditDetail(req tupleWriteRequest) string {
+	var b strings.Builder
+	b.WriteString("writes=" + strconv.Itoa(len(req.Writes)) + " deletes=" + strconv.Itoa(len(req.Deletes)))
+	for _, t := range req.Writes {
+		b.WriteString("; +" + t.User + " " + t.Relation + " " + t.Object)
+	}
+	for _, t := range req.Deletes {
+		b.WriteString("; -" + t.User + " " + t.Relation + " " + t.Object)
+	}
+	return b.String()
+}
+
+// validUser requires "user:<canonical id>". An Auth0 subject ("provider|id") is rejected so
+// tuples can't be keyed on a login.
+func validUser(s string) bool {
+	id, ok := strings.CutPrefix(s, userPrincipalType)
+	return ok && id != "" && !strings.ContainsAny(id, " \t\n#|:*")
+}
+
 func validTupleBatch(req tupleWriteRequest) bool {
 	n := len(req.Writes) + len(req.Deletes)
 	if n == 0 || n > maxTupleBatch {
 		return false
 	}
 	for _, t := range append(append([]fga.Tuple{}, req.Writes...), req.Deletes...) {
-		if t.User == "" || t.Relation == "" || !validObject(t.Object) {
+		if !validUser(t.User) || t.Relation == "" || !validObject(t.Object) {
 			return false
 		}
 	}

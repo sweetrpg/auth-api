@@ -152,12 +152,28 @@ authorization`, PADR-0035, PADR-0038).
 - **Datastore:** OpenFGA runs against an external PostgreSQL database, not Atlas. The
   `openfga-datastore` ExternalSecret composes `OPENFGA_DATASTORE_URI` from the Akeyless item
   `/sweetrpg/auth/openfga/datastore`. The `openfga` Deployment runs `migrate` as an init container.
+- **Tuple subjects are canonical user IDs:** tuples use `user:<canonical user id>`, never an Auth0
+  subject, so a relation follows the person across linked logins (see "Roles and deny entries
+  belong to the person"). The tuple endpoints reject any user that is not `user:<id>` without
+  `|`, `:`, `#` or `*`.
 - **`POST /authz/check-relation`** takes `{object, relation}` (`object` is `type:id`) and a bearer
-  token. It checks `user:<subject>` against the store and returns `{allowed}`. An invalid token
-  never reaches the store. A store error returns 503 and is never treated as allowed.
+  token. It resolves the caller's canonical user with `principalFor` and checks `user:<id>`
+  against the store, returning `{allowed}`. An invalid token never reaches the store. When the
+  canonical user cannot be resolved (users-api unreachable, or the login has no user) or the
+  store errors, it returns 503 and is never treated as allowed.
 - **`/internal/openfga/tuples`** (`POST` writes and deletes in one batch, `GET` pages through an
   object's tuples) requires a bearer token whose subject holds `openfga-writer`. Admin does not imply
-  it. Writes run through `performAudited`. A failed batch applies nothing.
+  it. Writes run through `performAudited`, and the audit detail lists every tuple in the batch. A
+  failed batch applies nothing.
+- **Write errors:** OpenFGA validation failures (unknown relation, a tuple that violates the model)
+  return 400 `invalid_tuples`, an OpenFGA 409 returns 409 `tuple_conflict`, and transport or server
+  failures return 503. The audit row stores a short fixed message, never OpenFGA's response text.
+- **Idempotent writes:** batches send `on_duplicate=ignore` and `on_missing=ignore`, so writing a
+  tuple that exists and deleting one that does not are no-ops. A reconciler can resend a batch
+  after a timeout without failing it. The cost is that a typo in a delete is not reported.
+- **Store bootstrap:** auth-api runs 2 or more replicas (HPA `minReplicas: 2`), so replicas can
+  create the store at the same moment. After creating it, a replica re-lists and uses the oldest
+  store of that name, deleting its own if it lost.
 - **Consumer contract:** call `check-relation` for each decision. Cache results briefly and never
   past an access revocation window. Reconcile derived tuples from the consumer's own data through
   the tuple endpoints. See PADR-0038 for how a reconciler obtains its token.
