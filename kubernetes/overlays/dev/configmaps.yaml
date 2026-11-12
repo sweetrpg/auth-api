@@ -34,3 +34,7 @@ data:
   # outage returns 503, never unlimited traffic. REDIS_PASS comes from an ExternalSecret (#106).
   REDIS_HOST: cache.sweetrpg-auth.svc.cluster.local
   REDIS_PORT: "6379"
+  # Publishes deny and role_removed to AUTH_EVENTS (PADR-0039). NATS_PASSWORD comes from
+  # api-nats (nats.yaml).
+  NATS_URL: nats://nats.nats-system.svc.cluster.local:4222
+  NATS_USER: auth-api
