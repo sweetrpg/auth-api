@@ -45,6 +45,10 @@ spec:
                             name: api-misc
                       - secretRef:
                             name: api-cache
+                      # NATS_PASSWORD for the AUTH_EVENTS publisher; optional so envs without NATS still start.
+                      - secretRef:
+                            name: api-nats
+                            optional: true
                   env:
                       - name: GOMEMLIMIT
                         value: "460MiB"
