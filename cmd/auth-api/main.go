@@ -27,6 +27,7 @@ import (
 	"github.com/sweetrpg/auth-api/auth0"
 	"github.com/sweetrpg/auth-api/constants"
 	"github.com/sweetrpg/auth-api/docs"
+	"github.com/sweetrpg/auth-api/events"
 	"github.com/sweetrpg/auth-api/fga"
 	"github.com/sweetrpg/auth-api/server"
 	"github.com/sweetrpg/common.go/logging"
@@ -102,6 +103,17 @@ func main() {
 		logging.Logger.Warn("REDIS_HOST is not configured; rate limiting will fail closed (503) on every limited request")
 	}
 	r.Use(ratelimit.Middleware(redisPool, ratelimit.DefaultOptions()))
+
+	if natsURL := os.Getenv("NATS_URL"); natsURL == "" {
+		logging.Logger.Warn("NATS_URL is not set; deny and role-removal events are not published")
+	} else {
+		bus, err := events.ConnectNATS(natsURL)
+		if err != nil {
+			log.Fatalf("auth-api cannot start: %v", err)
+		}
+		defer bus.Close()
+		server.SetEventEmitter(events.NewEmitter(bus, events.DefaultBackoff))
+	}
 
 	server.SetupHandlers(r, jwksCache, auth0Config)
 	server.SetupFGAHandlers(r, jwksCache, auth0Config, setupFGAStore())

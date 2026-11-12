@@ -5,5 +5,6 @@
   {"id": "entitlements-api", "name": "Entitlements API"},
   {"id": "game-room-api", "name": "Game Room API"},
   {"id": "game-systems-api", "name": "Game Systems API"},
+  {"id": "initiative-api", "name": "Initiative API"},
   {"id": "users-api", "name": "Users API"}
 ]

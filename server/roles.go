@@ -11,12 +11,31 @@ import (
 	apiv "github.com/sweetrpg/api-core.go/vo"
 	"github.com/sweetrpg/auth-api/auth0"
 	"github.com/sweetrpg/auth-api/constants"
+	"github.com/sweetrpg/auth-api/events"
 	"github.com/sweetrpg/auth-api/models"
 	"github.com/sweetrpg/auth-api/registry"
 	"github.com/sweetrpg/authz-client.go/authz"
 	"github.com/sweetrpg/common.go/logging"
 	"github.com/sweetrpg/common.go/util"
 )
+
+// Store and audit operations the mutating handlers call. Variables so tests need no database.
+var (
+	hasRole         = models.HasRole
+	insertRole      = models.AddRole
+	deleteRole      = models.RemoveRole
+	hasDenyEntry    = models.HasDenyEntry
+	insertDenyEntry = models.AddDenyEntry
+	deleteDenyEntry = models.RemoveDenyEntry
+	audited         = performAudited
+)
+
+// eventEmitter publishes deny and role-removal changes after they commit (PADR-0039). Nil drops
+// them with a warning.
+var eventEmitter *events.Emitter
+
+// SetEventEmitter wires the bus publisher; call it before serving.
+func SetEventEmitter(e *events.Emitter) { eventEmitter = e }
 
 type subjectRolesSummary struct {
 	Subject        string   `json:"subject"`
@@ -259,16 +278,16 @@ func addRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, authzC
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserID, "add_role", subject, string(role),
+	status, err := audited(c.Request.Context(), actingUserID, "add_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
-			exists, err := models.HasRole(ctx, p, role)
+			exists, err := hasRole(ctx, p, role)
 			if err != nil {
 				return 0, err
 			}
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddRole(ctx, p, role, actingUserID); err != nil {
+			if err := insertRole(ctx, p, role, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -321,9 +340,14 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserID, "remove_role", subject, string(role),
+	held := false
+	status, err := audited(c.Request.Context(), actingUserID, "remove_role", subject, string(role),
 		func(ctx context.Context) (int, error) {
-			if err := models.RemoveRole(ctx, p, role); err != nil {
+			var err error
+			if held, err = hasRole(ctx, p, role); err != nil {
+				return 0, err
+			}
+			if err := deleteRole(ctx, p, role); err != nil {
 				return 0, err
 			}
 			return http.StatusNoContent, nil
@@ -332,6 +356,9 @@ func removeRole(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, aut
 		logging.Logger.Error("Failed to remove role", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "audit_failed", Message: "failed to remove role"})
 		return
+	}
+	if held {
+		eventEmitter.Emit(events.KindRoleRemoved, subject, events.EventData{Role: string(role)})
 	}
 	c.Status(status)
 }
@@ -383,16 +410,16 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserID, "add_deny_entry", subject, req.Service,
+	status, err := audited(c.Request.Context(), actingUserID, "add_deny_entry", subject, req.Service,
 		func(ctx context.Context) (int, error) {
-			exists, err := models.HasDenyEntry(ctx, p, req.Service)
+			exists, err := hasDenyEntry(ctx, p, req.Service)
 			if err != nil {
 				return 0, err
 			}
 			if exists {
 				return http.StatusNoContent, nil
 			}
-			if err := models.AddDenyEntry(ctx, p, req.Service, actingUserID); err != nil {
+			if err := insertDenyEntry(ctx, p, req.Service, actingUserID); err != nil {
 				return 0, err
 			}
 			return http.StatusCreated, nil
@@ -401,6 +428,9 @@ func addDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config, a
 		logging.Logger.Error("Failed to add deny entry", "error", err.Error())
 		c.JSON(http.StatusInternalServerError, apiv.ErrorVO{Error: "audit_failed", Message: "failed to add deny entry"})
 		return
+	}
+	if status == http.StatusCreated {
+		eventEmitter.Emit(events.KindDeny, subject, events.EventData{Service: req.Service})
 	}
 	c.Status(status)
 }
@@ -445,9 +475,9 @@ func removeDenyEntry(c *gin.Context, cache *auth0.JWKSCache, config auth0.Config
 		return
 	}
 
-	status, err := performAudited(c.Request.Context(), actingUserID, "remove_deny_entry", subject, service,
+	status, err := audited(c.Request.Context(), actingUserID, "remove_deny_entry", subject, service,
 		func(ctx context.Context) (int, error) {
-			if err := models.RemoveDenyEntry(ctx, p, service); err != nil {
+			if err := deleteDenyEntry(ctx, p, service); err != nil {
 				return 0, err
 			}
 			return http.StatusNoContent, nil
