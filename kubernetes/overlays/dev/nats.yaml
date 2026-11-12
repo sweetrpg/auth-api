@@ -13,11 +13,9 @@ spec:
   target:
     name: api-nats
     creationPolicy: Owner
-  dataFrom:
+  data:
     # NATS user auth-api (flux configs/nats). Same Akeyless value the NATS broker reads.
-    - extract:
+    - secretKey: NATS_PASSWORD
+      remoteRef:
         key: /sweetrpg/auth/api/nats/auth
-      rewrite:
-        - regexp:
-            source: "password"
-            target: NATS_PASSWORD
+        property: password
