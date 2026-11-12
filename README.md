@@ -29,6 +29,15 @@ Requires `DB_URI` (or the `DB_SCHEME`/`DB_HOST`/`DB_USER`/`DB_PW`/`DB_NAME`/`DB_
 `AUTH0_DOMAIN`, and `AUTH0_AUDIENCE` in the environment. Serves on `:8000` (`BIND_ADDRESS` to
 override).
 
+## Events
+
+A new deny entry and the removal of a held role are published to the `AUTH_EVENTS` JetStream
+stream (PADR-0039) on `auth.events.<subject>` after the change commits. The envelope's
+`entity_id` is the Auth0 subject and `action` is `deny` or `role_removed`; `data` carries the
+denied `service` or removed `role`. A failed publish is retried with backoff in the background and
+logged if dropped; it never fails the admin request. Set `NATS_URL` (and `NATS_CREDS` or
+`NATS_USER`/`NATS_PASSWORD`); without it events are not published.
+
 ## Testing
 
 ```bash
