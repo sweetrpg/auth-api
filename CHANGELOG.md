@@ -1,3 +1,18 @@
+## [0.12.0] - 2026-11-12
+
+### 🚀 Features
+
+- *(events)* Publish deny and role_removed to AUTH_EVENTS after commit
+- *(registry)* Add initiative-api so administrators can deny it
+- *(kubernetes)* Wire AUTH_EVENTS publisher NATS user in dev
+
+### 🐛 Bug Fixes
+
+- *(authz)* Key OpenFGA on canonical user and harden tuple writes
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.11.0
 ## [0.11.0] - 2026-11-10
 
 ### 🚀 Features
