@@ -20,5 +20,22 @@ type volume-edit
     define submitter: [user]
     define approver: [user]
 
-# Consumer sections below. Initiative! types (session, encounter) are added by
-# initiative-platform task 1.7.
+# Initiative! sessions (PADR-0035). Membership tuples are written by initiative-api; the gm, co_gm,
+# player and observer relations are direct. can_view and the encounter relations derive from them.
+type session
+  relations
+    define gm: [user]
+    define co_gm: [user]
+    define player: [user]
+    define observer: [user]
+    define can_view: gm or co_gm or player or observer
+    define can_edit: gm or co_gm
+    define can_approve: gm or co_gm
+
+# An encounter belongs to one session and inherits access from it.
+type encounter
+  relations
+    define parent: [session]
+    define can_view: can_view from parent
+    define can_edit: can_edit from parent
+    define can_approve: can_approve from parent
