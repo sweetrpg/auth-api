@@ -1,7 +1,7 @@
 # OpenFGA authorization server for auth-api (evaluate-openfga-authorization, dev). The migrate
 # init container applies datastore migrations before the server starts. Only auth-api calls it,
-# over in-cluster DNS. Selectors use com.sweetrpg/workload because the overlay's common labels
-# overwrite app.kubernetes.io/name and component on pod templates.
+# over in-cluster DNS. Selectors use com.sweetrpg/workload; this file sits outside app/ so the
+# auth-api labels never reach its pod template (they would match the api-v1 Service).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

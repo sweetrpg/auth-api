@@ -4,27 +4,9 @@ kind: Kustomization
 namespace: sweetrpg-auth
 
 resources:
-    - ../../base
-    - atlas-db-user.yaml
-    - configmaps.yaml
+    - app
     - openfga.yaml
     - openfga-datastore.yaml
-    - nats.yaml
-    - pod-monitor.yaml
-    - secrets/cache.yaml
-    - secrets/db-creds.yaml
-    - secrets/db.yaml
-    - secrets/misc.yaml
-
-labels:
-    - pairs:
-          app.kubernetes.io/name: auth-api
-          app.kubernetes.io/version: v1
-          app.kubernetes.io/component: api
-          app.kubernetes.io/part-of: auth
-          com.sweetrpg/env: dev
-      includeSelectors: false
-      includeTemplates: true
 
 generatorOptions:
     disableNameSuffixHash: true
