@@ -13,6 +13,9 @@ import (
 const (
 	EnvAPIURL    = "OPENFGA_API_URL"
 	EnvStoreName = "OPENFGA_STORE_NAME"
+	// EnvAPIKey is the OpenFGA preshared key. It is optional: unset means no Authorization header,
+	// so the same image runs before and after OpenFGA authn is enabled (PADR-0040).
+	EnvAPIKey = "OPENFGA_API_KEY"
 )
 
 // DefaultStoreName is the store name used when OPENFGA_STORE_NAME is unset.
@@ -22,6 +25,7 @@ const DefaultStoreName = "sweetrpg"
 type Config struct {
 	APIURL    string
 	StoreName string
+	APIKey    string // empty when OpenFGA authn is not enabled
 }
 
 // ConfigFromEnvironment reads and validates the OpenFGA settings. The API URL is required; the
@@ -43,5 +47,5 @@ func configFrom(get func(string) string) (Config, error) {
 	if name == "" {
 		name = DefaultStoreName
 	}
-	return Config{APIURL: raw, StoreName: name}, nil
+	return Config{APIURL: raw, StoreName: name, APIKey: strings.TrimSpace(get(EnvAPIKey))}, nil
 }

@@ -178,6 +178,33 @@ authorization`, PADR-0035, PADR-0038).
   past an access revocation window. Reconcile derived tuples from the consumer's own data through
   the tuple endpoints. See PADR-0038 for how a reconciler obtains its token.
 
+## Session tuple endpoints (PADR-0040)
+
+Users write the OpenFGA tuples for sessions they hold a relation on, so `initiative-api` can keep
+membership tuples current on the request path. Every call authenticates the caller's own bearer,
+resolves the canonical user, and refuses a user with a deny entry for `initiative-api`. Tuples are
+necessary but not sufficient: `initiative-api` also requires a live Mongo membership record.
+
+- `POST /authz/sessions` mints a 24-hex session ID, writes `user:<caller> gm session:<id>`, and
+  records it in `session_mints`. IDs always come from here. At most `MAX_OPEN_MINTS` (100) open
+  mints per user, 20 per user per hour (`MINTS_PER_USER_HOUR`), 600 per hour overall
+  (`MINTS_GLOBAL_HOUR`).
+- `DELETE /authz/sessions/{id}` (caller holds `gm`) deletes every tuple on the session and closes
+  its mint.
+- `POST /authz/session-tuples` `{session_id, writes, deletes}`, at most 20 tuples, relations
+  `co_gm`/`player`/`observer` only, object always `session:<id>`. Caller needs `can_view` to delete
+  only their own tuple, `gm` for any `co_gm` tuple, `can_edit` otherwise. At most
+  `MAX_SESSION_TUPLES` (200) tuples per session.
+- `GET /internal/openfga/session-mints?min_age=15m[&after=<next>][&limit=n]` (returns `{mints, next}`,
+  ordered by created_at then id; `next` is empty on the last page) and
+  `POST /internal/openfga/session-mints/{id}/close` require `openfga-writer` (the reconciler's
+  garbage collection). Closed mints are removed by a TTL
+  index 30 days after `closed_at`.
+- Every write is audited before it runs. Rate limits use Redis; with Redis down the endpoints answer
+  503 rather than run unlimited.
+- `OPENFGA_API_KEY` is optional: when set it is sent as the OpenFGA preshared key on Bootstrap and
+  every call; unset sends nothing. Enabling OpenFGA authn is a separate rollout step.
+
 ## Committing Code
 
 [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`.

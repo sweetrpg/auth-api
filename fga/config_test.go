@@ -27,3 +27,16 @@ func TestConfigFromEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigReadsTheOptionalAPIKey(t *testing.T) {
+	with, err := configFrom(func(k string) string {
+		return map[string]string{EnvAPIURL: "http://openfga:8080", EnvAPIKey: " k "}[k]
+	})
+	if err != nil || with.APIKey != "k" {
+		t.Fatalf("with key = %+v, %v; want APIKey k", with, err)
+	}
+	without, err := configFrom(func(k string) string { return map[string]string{EnvAPIURL: "http://openfga:8080"}[k] })
+	if err != nil || without.APIKey != "" {
+		t.Fatalf("without key = %+v, %v; want empty APIKey", without, err)
+	}
+}
