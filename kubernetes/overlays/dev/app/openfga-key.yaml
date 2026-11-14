@@ -1,4 +1,4 @@
-# OpenFGA preshared key (PADR-0040). Akeyless item /sweetrpg/auth/openfga/preshared-key is JSON
+# OpenFGA preshared key (PADR-0040). Akeyless item /sweetrpg/auth/openfga/auth is JSON
 # {"key": "<random string>"}. auth-api sends it as OPENFGA_API_KEY; the OpenFGA pod reads the same
 # Secret as its authn key once authentication is enabled (openfga.yaml).
 apiVersion: external-secrets.io/v1
@@ -16,5 +16,5 @@ spec:
   data:
     - secretKey: OPENFGA_API_KEY
       remoteRef:
-        key: /sweetrpg/auth/openfga/preshared-key
+        key: /sweetrpg/auth/openfga/auth
         property: key
