@@ -1,3 +1,13 @@
+## [0.15.0] - 2026-11-14
+
+### 🚀 Features
+
+- *(kubernetes)* Require a preshared key on the OpenFGA server
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.14.0
+- Merge develop into feature/openfga-enable-preshared-authn
 ## [0.14.0] - 2026-11-14
 
 ### 🚀 Features
