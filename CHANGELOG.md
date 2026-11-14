@@ -1,3 +1,19 @@
+## [0.13.0] - 2026-11-14
+
+### 🚀 Features
+
+- *(fga)* Add session and encounter types to the OpenFGA model
+- *(fga)* Read an optional OpenFGA preshared key
+- *(authz)* Add user-scoped session tuple endpoints
+
+### 🐛 Bug Fixes
+
+- *(authz)* Page mint listing, count real tuple changes, idempotent end
+- *(authz)* Index mints by created_at then id; reword the end-retry test
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.12.0
 ## [0.12.0] - 2026-11-12
 
 ### 🚀 Features
