@@ -129,12 +129,12 @@ func setupFGAStore() fga.Store {
 		logging.Logger.Error("OpenFGA configuration invalid", "error", err.Error())
 		os.Exit(1)
 	}
-	boot, err := fga.Bootstrap(context.Background(), cfg.APIURL, cfg.StoreName)
+	boot, err := fga.Bootstrap(context.Background(), cfg.APIURL, cfg.StoreName, cfg.APIKey)
 	if err != nil {
 		logging.Logger.Error("OpenFGA bootstrap failed", "error", err.Error())
 		os.Exit(1)
 	}
-	client, err := fga.NewClient(cfg.APIURL, boot.StoreID, boot.ModelID)
+	client, err := fga.NewClient(cfg.APIURL, boot.StoreID, boot.ModelID, cfg.APIKey)
 	if err != nil {
 		logging.Logger.Error("OpenFGA client setup failed", "error", err.Error())
 		os.Exit(1)

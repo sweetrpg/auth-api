@@ -18,8 +18,8 @@ type Bootstrapped struct {
 // Bootstrap finds or creates the named store, then makes sure its latest authorization model
 // matches the checked-in DSL. A model that differs gets written as a new version; an identical
 // one is reused, so restarts do not pile up model versions.
-func Bootstrap(ctx context.Context, apiURL, storeName string) (Bootstrapped, error) {
-	admin, err := openfga.NewSdkClient(&openfga.ClientConfiguration{ApiUrl: apiURL})
+func Bootstrap(ctx context.Context, apiURL, storeName, apiKey string) (Bootstrapped, error) {
+	admin, err := openfga.NewSdkClient(&openfga.ClientConfiguration{ApiUrl: apiURL, Credentials: apiKeyCredentials(apiKey)})
 	if err != nil {
 		return Bootstrapped{}, fmt.Errorf("create openfga admin client: %w", err)
 	}
@@ -28,7 +28,7 @@ func Bootstrap(ctx context.Context, apiURL, storeName string) (Bootstrapped, err
 		return Bootstrapped{}, err
 	}
 
-	scoped, err := openfga.NewSdkClient(&openfga.ClientConfiguration{ApiUrl: apiURL, StoreId: storeID})
+	scoped, err := openfga.NewSdkClient(&openfga.ClientConfiguration{ApiUrl: apiURL, StoreId: storeID, Credentials: apiKeyCredentials(apiKey)})
 	if err != nil {
 		return Bootstrapped{}, fmt.Errorf("create openfga store client: %w", err)
 	}

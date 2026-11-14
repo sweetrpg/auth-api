@@ -8,6 +8,7 @@ import (
 
 	fgasdk "github.com/openfga/go-sdk"
 	openfga "github.com/openfga/go-sdk/client"
+	"github.com/openfga/go-sdk/credentials"
 	"github.com/sweetrpg/common.go/logging"
 )
 
@@ -41,16 +42,29 @@ type Client struct {
 }
 
 // NewClient builds a Client for a store and model that Bootstrap resolved.
-func NewClient(apiURL, storeID, modelID string) (*Client, error) {
+// apiKey is the OpenFGA preshared key, or empty when authn is off.
+func NewClient(apiURL, storeID, modelID, apiKey string) (*Client, error) {
 	sdk, err := openfga.NewSdkClient(&openfga.ClientConfiguration{
 		ApiUrl:               apiURL,
 		StoreId:              storeID,
 		AuthorizationModelId: modelID,
+		Credentials:          apiKeyCredentials(apiKey),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create openfga client: %w", err)
 	}
 	return &Client{sdk: sdk}, nil
+}
+
+// apiKeyCredentials sends key as a bearer token on every OpenFGA call, or nothing when it is empty.
+func apiKeyCredentials(key string) *credentials.Credentials {
+	if key == "" {
+		return nil
+	}
+	return &credentials.Credentials{
+		Method: credentials.CredentialsMethodApiToken,
+		Config: &credentials.Config{ApiToken: key},
+	}
 }
 
 // Check reports whether t.User holds t.Relation on t.Object.
