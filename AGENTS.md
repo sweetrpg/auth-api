@@ -152,6 +152,9 @@ authorization`, PADR-0035, PADR-0038).
 - **Datastore:** OpenFGA runs against an external PostgreSQL database, not Atlas. The
   `openfga-datastore` ExternalSecret composes `OPENFGA_DATASTORE_URI` from the Akeyless item
   `/sweetrpg/auth/openfga/datastore`. The `openfga` Deployment runs `migrate` as an init container.
+- **Preshared key:** the `auth-api-openfga` ExternalSecret reads Akeyless item
+  `/sweetrpg/auth/openfga/preshared-key` (JSON `{"key": "..."}`) into Secret `api-openfga`, key
+  `OPENFGA_API_KEY`, mounted optionally on the auth-api pods.
 - **Tuple subjects are canonical user IDs:** tuples use `user:<canonical user id>`, never an Auth0
   subject, so a relation follows the person across linked logins (see "Roles and deny entries
   belong to the person"). The tuple endpoints reject any user that is not `user:<id>` without
