@@ -1,3 +1,16 @@
+## [0.14.0] - 2026-11-14
+
+### 🚀 Features
+
+- *(kubernetes)* Read the OpenFGA preshared key into auth-api (optional)
+
+### 🐛 Bug Fixes
+
+- *(kubernetes)* Read the OpenFGA key from /sweetrpg/auth/openfga/auth
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.13.1
 ## [0.13.1] - 2026-11-14
 
 ### 🐛 Bug Fixes
