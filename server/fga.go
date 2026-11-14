@@ -169,6 +169,12 @@ func (h fgaHandlers) readTuples(c *gin.Context) {
 // requireWriter verifies the bearer token and that its subject holds openfga-writer. It writes
 // the error response and returns ok=false on any failure.
 func (h fgaHandlers) requireWriter(c *gin.Context) (string, bool) {
+	return h.requireWriterStatus(c, http.StatusInternalServerError, "query_failed")
+}
+
+// requireWriterStatus is requireWriter with the response used when the role lookup itself fails.
+// The session-mint endpoints use 503 so a caller retries, as the other fail-closed paths do.
+func (h fgaHandlers) requireWriterStatus(c *gin.Context, lookupFailStatus int, lookupFailError string) (string, bool) {
 	token := bearerToken(c)
 	if token == "" {
 		invalidTokenResponse(c)
@@ -182,7 +188,7 @@ func (h fgaHandlers) requireWriter(c *gin.Context) (string, bool) {
 	holds, err := holdsWriterRole(c.Request.Context(), principalFor(c.Request.Context(), subject, token))
 	if err != nil {
 		logging.Logger.Error("Failed to look up roles", "error", err.Error())
-		c.JSON(http.StatusInternalServerError, authzErrorResponse{Error: "query_failed"})
+		c.JSON(lookupFailStatus, authzErrorResponse{Error: lookupFailError})
 		return "", false
 	}
 	if !holds {

@@ -27,7 +27,7 @@ func captureServer(t *testing.T, status int, reply string) (*Client, *map[string
 		_, _ = w.Write([]byte(reply))
 	}))
 	t.Cleanup(srv.Close)
-	c, err := NewClient(srv.URL, "01ARZ3NDEKTSV4RRFFQ69G5FAV", "")
+	c, err := NewClient(srv.URL, "01ARZ3NDEKTSV4RRFFQ69G5FAV", "", "")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -102,5 +102,34 @@ func TestWriteServerErrorIsOpaque(t *testing.T) {
 	}
 	if got := err.Error(); got != "openfga write failed" {
 		t.Errorf("error text = %q, want no server detail", got)
+	}
+}
+
+func TestAPIKeyIsSentOnlyWhenSet(t *testing.T) {
+	for name, tc := range map[string]struct{ key, want string }{
+		"key set": {"s3cret", "Bearer s3cret"},
+		"no key":  {"", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Get("Authorization")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"allowed":true}`))
+			}))
+			t.Cleanup(srv.Close)
+			c, err := NewClient(srv.URL, "01ARZ3NDEKTSV4RRFFQ69G5FAV", "", tc.key)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := c.Check(context.Background(), tup); err != nil {
+				t.Fatalf("Check: %v", err)
+			}
+
+			if got != tc.want {
+				t.Errorf("Authorization = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

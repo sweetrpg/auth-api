@@ -29,6 +29,7 @@ import (
 	"github.com/sweetrpg/auth-api/docs"
 	"github.com/sweetrpg/auth-api/events"
 	"github.com/sweetrpg/auth-api/fga"
+	"github.com/sweetrpg/auth-api/models"
 	"github.com/sweetrpg/auth-api/server"
 	"github.com/sweetrpg/common.go/logging"
 	"github.com/sweetrpg/common.go/util"
@@ -116,9 +117,26 @@ func main() {
 	}
 
 	server.SetupHandlers(r, jwksCache, auth0Config)
-	server.SetupFGAHandlers(r, jwksCache, auth0Config, setupFGAStore())
+	fgaStore := setupFGAStore()
+	server.SetupFGAHandlers(r, jwksCache, auth0Config, fgaStore)
+	sessionLimits := server.SessionLimitsFromEnv()
+	var sessionLimiter *ratelimit.Limiter
+	if redisPool != nil {
+		sessionLimiter = ratelimit.New(redisPool, server.SessionTiers(sessionLimits))
+	}
+	setupSessionEndpoints(r, jwksCache, auth0Config, fgaStore, sessionLimiter, sessionLimits)
 
 	_ = r.Run(util.GetEnv(apiconstants.BIND_ADDRESS, ":8000"))
+}
+
+// setupSessionEndpoints registers the PADR-0040 session endpoints. With no Redis pool the limiter is
+// nil and every session request answers 503 rather than run unlimited.
+func setupSessionEndpoints(r *gin.Engine, cache *auth0.JWKSCache, cfg auth0.Config, store fga.Store, limiter *ratelimit.Limiter, limits server.SessionLimits) {
+	if err := models.EnsureSessionMintIndexes(context.Background()); err != nil {
+		logging.Logger.Error("Could not create session mint indexes", "error", err.Error())
+		os.Exit(1)
+	}
+	server.SetupSessionHandlers(r, cache, cfg, store, models.MintStore{}, limiter, limits)
 }
 
 // setupFGAStore bootstraps the OpenFGA store and model and returns the client. A misconfigured or
@@ -129,12 +147,12 @@ func setupFGAStore() fga.Store {
 		logging.Logger.Error("OpenFGA configuration invalid", "error", err.Error())
 		os.Exit(1)
 	}
-	boot, err := fga.Bootstrap(context.Background(), cfg.APIURL, cfg.StoreName)
+	boot, err := fga.Bootstrap(context.Background(), cfg.APIURL, cfg.StoreName, cfg.APIKey)
 	if err != nil {
 		logging.Logger.Error("OpenFGA bootstrap failed", "error", err.Error())
 		os.Exit(1)
 	}
-	client, err := fga.NewClient(cfg.APIURL, boot.StoreID, boot.ModelID)
+	client, err := fga.NewClient(cfg.APIURL, boot.StoreID, boot.ModelID, cfg.APIKey)
 	if err != nil {
 		logging.Logger.Error("OpenFGA client setup failed", "error", err.Error())
 		os.Exit(1)
