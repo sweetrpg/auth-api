@@ -49,6 +49,11 @@ spec:
                       - secretRef:
                             name: api-nats
                             optional: true
+                      # OPENFGA_API_KEY, sent to OpenFGA as a bearer token. Optional: unset means no header,
+                      # which is correct while OpenFGA authentication is off.
+                      - secretRef:
+                            name: api-openfga
+                            optional: true
                   env:
                       - name: GOMEMLIMIT
                         value: "460MiB"
