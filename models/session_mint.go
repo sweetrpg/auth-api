@@ -40,7 +40,7 @@ func mintColl() *mongo.Collection {
 func EnsureSessionMintIndexes(ctx context.Context) error {
 	_, err := mintColl().Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "closed_at", Value: 1}}},
-		{Keys: bson.D{{Key: "closed_at", Value: 1}, {Key: "created_at", Value: 1}}},
+		{Keys: bson.D{{Key: "closed_at", Value: 1}, {Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
 		{
 			Keys:    bson.D{{Key: "closed_at", Value: 1}},
 			Options: options.Index().SetExpireAfterSeconds(int32(ClosedMintRetention / time.Second)).SetName("closed_at_ttl"),

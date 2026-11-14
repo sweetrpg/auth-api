@@ -745,7 +745,7 @@ func TestListMintsPagesPastAnOldBacklog(t *testing.T) {
 	}
 }
 
-func TestEndingASessionTwiceIsIdempotentWhileTheMintIsOpen(t *testing.T) {
+func TestRetryingEndAfterAFailedMintCloseClosesTheMint(t *testing.T) {
 	e := newSessEnv(t, &fakeLimiter{}, testLimits)
 	id := e.mint(t, "gm-bearer")
 	e.store.tuples = nil // the first end deleted the tuples, then the mint close failed
