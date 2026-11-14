@@ -50,6 +50,16 @@ spec:
               value: "false"
             - name: OPENFGA_LOG_FORMAT
               value: json
+            # Preshared-key authentication (PADR-0040). /healthz stays unauthenticated, so the probes
+            # below need no header. The Secret is not optional: a missing key must block the rollout, not
+            # start a server that rejects every caller. To roll back, remove these two variables.
+            - name: OPENFGA_AUTHN_METHOD
+              value: preshared
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: api-openfga
+                  key: OPENFGA_API_KEY
           ports:
             - name: http
               containerPort: 8080
