@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -153,16 +154,42 @@ func (m *memMints) Close(_ context.Context, id, _ string, now time.Time) (bool, 
 	return true, nil
 }
 
-func (m *memMints) ListOpenBefore(_ context.Context, cutoff time.Time, limit int64) ([]models.SessionMint, error) {
+func (m *memMints) ListOpenBefore(_ context.Context, cutoff time.Time, after *models.MintCursor, limit int64) ([]models.SessionMint, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := []models.SessionMint{}
+	var all []models.SessionMint
 	for _, x := range m.mints {
-		if x.ClosedAt == nil && !x.CreatedAt.After(cutoff) && int64(len(out)) < limit {
-			out = append(out, *x)
+		if x.ClosedAt != nil || x.CreatedAt.After(cutoff) {
+			continue
 		}
+		if after != nil && !x.CreatedAt.After(after.CreatedAt) && (!x.CreatedAt.Equal(after.CreatedAt) || x.ID <= after.ID) {
+			continue
+		}
+		all = append(all, *x)
 	}
-	return out, nil
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.Before(all[j].CreatedAt)
+		}
+		return all[i].ID < all[j].ID
+	})
+	if int64(len(all)) > limit {
+		all = all[:limit]
+	}
+	if all == nil {
+		all = []models.SessionMint{}
+	}
+	return all, nil
+}
+
+func (m *memMints) FindOpen(_ context.Context, id string) (models.SessionMint, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	x, ok := m.mints[id]
+	if !ok || x.ClosedAt != nil {
+		return models.SessionMint{}, false, nil
+	}
+	return *x, true, nil
 }
 
 func (m *memMints) open(user string) int {
@@ -187,13 +214,14 @@ func (f *fakeLimiter) Check(_ context.Context, _, tier string) (ratelimit.Result
 }
 
 type sessEnv struct {
-	r      *gin.Engine
-	store  *memStore
-	mints  *memMints
-	limits SessionLimits
-	denied map[string]bool
-	audits []string
-	auditE error
+	r       *gin.Engine
+	store   *memStore
+	mints   *memMints
+	limits  SessionLimits
+	denied  map[string]bool
+	auditMu sync.Mutex
+	audits  []string
+	auditE  error
 }
 
 var testLimits = SessionLimits{MaxOpenMints: 100, MaxSessionTuples: 200, MintsPerUserHour: 20, MintsGlobalHour: 600, TupleReqsPerMinute: 120}
@@ -226,9 +254,12 @@ func newSessEnv(t *testing.T, lim rateChecker, limits SessionLimits) *sessEnv {
 		return p.UserID == "u-den", nil
 	}
 	auditedWrite = func(ctx context.Context, _ string, action, target, _ string, op func(context.Context) (int, error)) (int, error) {
+		env.auditMu.Lock()
 		env.audits = append(env.audits, action+" "+target)
-		if env.auditE != nil {
-			return 0, env.auditE
+		failure := env.auditE
+		env.auditMu.Unlock()
+		if failure != nil {
+			return 0, failure
 		}
 		return op(ctx)
 	}
@@ -639,5 +670,135 @@ func TestSessionLimitsDefaultsAndOverrides(t *testing.T) {
 	}
 	if tiers := SessionTiers(got); tiers[tierMintGlobal].Limit != 600 || tiers[tierSessionTups].Window != 60 {
 		t.Errorf("tiers = %+v", tiers)
+	}
+}
+
+func TestPaddingDeletesCannotSlipWritesPastTheCap(t *testing.T) {
+	const id = "0123456789abcdef01234567"
+	limits := testLimits
+	limits.MaxSessionTuples = 5
+	e := newSessEnv(t, &fakeLimiter{}, limits)
+	e.seed(id, map[string]string{"u-gm": "gm", "u-a": "player", "u-b": "player", "u-c": "player", "u-d": "player"})
+	writes := tup("u-x", "player") + "," + tup("u-y", "player")
+	pad := tup("u-ghost1", "player") + "," + tup("u-ghost2", "player")
+
+	rec := e.do(http.MethodPost, "/authz/session-tuples", "gm-bearer", tuplesBody(id, writes, pad))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("padded request = %d %s, want 409 session_full", rec.Code, rec.Body)
+	}
+	if n := len(e.store.on("session:" + id)); n != 5 {
+		t.Errorf("tuples = %d, want 5 (the cap held)", n)
+	}
+}
+
+func TestNetTuplesIgnoresDuplicateWritesAndMissingDeletes(t *testing.T) {
+	a := fga.Tuple{User: "user:a", Relation: "player", Object: "session:x"}
+	b := fga.Tuple{User: "user:b", Relation: "player", Object: "session:x"}
+	c := fga.Tuple{User: "user:c", Relation: "player", Object: "session:x"}
+	if got := netTuples([]fga.Tuple{a}, []fga.Tuple{a}, nil); got != 1 {
+		t.Errorf("duplicate write = %d, want 1", got)
+	}
+	if got := netTuples([]fga.Tuple{a}, []fga.Tuple{b}, []fga.Tuple{c}); got != 2 {
+		t.Errorf("missing delete = %d, want 2", got)
+	}
+	if got := netTuples([]fga.Tuple{a}, []fga.Tuple{b}, []fga.Tuple{a}); got != 1 {
+		t.Errorf("swap = %d, want 1", got)
+	}
+}
+
+func TestListMintsPagesPastAnOldBacklog(t *testing.T) {
+	e := newSessEnv(t, &fakeLimiter{}, testLimits)
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	nowFunc = func() time.Time { return now }
+	for i := range 5 {
+		_ = e.mints.Insert(context.Background(), models.SessionMint{ID: fmt.Sprintf("%024x", i+1), UserID: "u-gm", CreatedAt: now.Add(-time.Duration(60-i) * time.Minute)})
+	}
+	seen := map[string]bool{}
+	after := ""
+	for page := 0; ; page++ {
+		if page > 5 {
+			t.Fatal("paging did not end")
+		}
+		url := "/internal/openfga/session-mints?min_age=15m&limit=2"
+		if after != "" {
+			url += "&after=" + after
+		}
+		rec := e.do(http.MethodGet, url, "writer-bearer", "")
+		if rec.Code != 200 {
+			t.Fatalf("page %d = %d %s", page, rec.Code, rec.Body)
+		}
+		for _, m := range regexp.MustCompile(`"id":"([0-9a-f]{24})"`).FindAllStringSubmatch(rec.Body.String(), -1) {
+			seen[m[1]] = true
+		}
+		next := regexp.MustCompile(`"next":"([^"]*)"`).FindStringSubmatch(rec.Body.String())
+		if next == nil || next[1] == "" {
+			break
+		}
+		after = next[1]
+	}
+	if len(seen) != 5 {
+		t.Fatalf("saw %d mints across pages, want all 5", len(seen))
+	}
+	if rec := e.do(http.MethodGet, "/internal/openfga/session-mints?min_age=15m&after=junk", "writer-bearer", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad cursor = %d, want 400", rec.Code)
+	}
+}
+
+func TestEndingASessionTwiceIsIdempotentWhileTheMintIsOpen(t *testing.T) {
+	e := newSessEnv(t, &fakeLimiter{}, testLimits)
+	id := e.mint(t, "gm-bearer")
+	e.store.tuples = nil // the first end deleted the tuples, then the mint close failed
+	path := "/authz/sessions/" + id
+
+	if rec := e.do(http.MethodDelete, path, "gm-bearer", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("retry = %d %s, want 204", rec.Code, rec.Body)
+	}
+	if e.mints.open("u-gm") != 0 {
+		t.Errorf("open mints = %d, want the retry to close it", e.mints.open("u-gm"))
+	}
+	if rec := e.do(http.MethodDelete, path, "gm-bearer", ""); rec.Code != http.StatusForbidden {
+		t.Errorf("a third end = %d, want 403 (mint already closed)", rec.Code)
+	}
+	if rec := e.do(http.MethodDelete, "/authz/sessions/"+e.mint(t, "co-bearer"), "gm-bearer", ""); rec.Code != http.StatusForbidden {
+		t.Errorf("ending another user's live session = %d, want 403", rec.Code)
+	}
+	other := e.mint(t, "co-bearer")
+	e.store.tuples = nil
+	if rec := e.do(http.MethodDelete, "/authz/sessions/"+other, "gm-bearer", ""); rec.Code != http.StatusForbidden {
+		t.Errorf("ending another user's empty mint = %d, want 403", rec.Code)
+	}
+}
+
+func TestMintEndpointsAnswer503WhenTheRoleLookupFails(t *testing.T) {
+	e := newSessEnv(t, &fakeLimiter{}, testLimits)
+	holdsWriterRole = func(context.Context, models.Principal) (bool, error) { return false, errors.New("roles db down") }
+	for _, call := range []struct{ method, path string }{
+		{http.MethodGet, "/internal/openfga/session-mints?min_age=1m"},
+		{http.MethodPost, "/internal/openfga/session-mints/0123456789abcdef01234567/close"},
+	} {
+		if rec := e.do(call.method, call.path, "writer-bearer", ""); rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s %s = %d, want 503", call.method, call.path, rec.Code)
+		}
+	}
+}
+
+func TestIntegrationCredentialsAreRefusedOnTheSessionEndpoints(t *testing.T) {
+	e := newSessEnv(t, &fakeLimiter{}, testLimits)
+	const id = "0123456789abcdef01234567"
+	for _, call := range []struct{ method, path, body string }{
+		{http.MethodPost, "/authz/sessions", ""},
+		{http.MethodDelete, "/authz/sessions/" + id, ""},
+		{http.MethodPost, "/authz/session-tuples", tuplesBody(id, tup("u-new", "player"), "")},
+		{http.MethodGet, "/internal/openfga/session-mints?min_age=1m", ""},
+		{http.MethodPost, "/internal/openfga/session-mints/" + id + "/close", ""},
+	} {
+		rec := e.do(call.method, call.path, "ic_0123456789abcdef", call.body)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s with an ic_ secret = %d, want 401 (it is not a user bearer)", call.method, call.path, rec.Code)
+		}
+	}
+	if e.store.writes != 0 || len(e.store.tuples) != 0 {
+		t.Errorf("an ic_ secret changed tuples: %+v", e.store.tuples)
 	}
 }

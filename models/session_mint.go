@@ -75,11 +75,31 @@ func (MintStore) Close(ctx context.Context, id, actor string, now time.Time) (bo
 	return true, nil
 }
 
-// ListOpenBefore returns open mints created at or before cutoff, oldest first, at most limit.
-func (MintStore) ListOpenBefore(ctx context.Context, cutoff time.Time, limit int64) ([]SessionMint, error) {
-	cur, err := mintColl().Find(ctx,
-		bson.D{{Key: "closed_at", Value: nil}, {Key: "created_at", Value: bson.D{{Key: "$lte", Value: cutoff}}}},
-		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(limit))
+// MintCursor is the position after which ListOpenBefore continues: the last mint returned.
+type MintCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+// ListOpenBefore returns open mints created at or before cutoff, ordered by (created_at, _id),
+// starting after cursor when it is non-nil, at most limit. Paging by cursor means a long backlog
+// of old mints cannot hide a newer one.
+func (MintStore) ListOpenBefore(ctx context.Context, cutoff time.Time, after *MintCursor, limit int64) ([]SessionMint, error) {
+	filter := bson.D{{Key: "closed_at", Value: nil}, {Key: "created_at", Value: bson.D{{Key: "$lte", Value: cutoff}}}}
+	if after != nil {
+		filter = bson.D{
+			{Key: "closed_at", Value: nil},
+			{Key: "$and", Value: bson.A{
+				bson.D{{Key: "created_at", Value: bson.D{{Key: "$lte", Value: cutoff}}}},
+				bson.D{{Key: "$or", Value: bson.A{
+					bson.D{{Key: "created_at", Value: bson.D{{Key: "$gt", Value: after.CreatedAt}}}},
+					bson.D{{Key: "created_at", Value: after.CreatedAt}, {Key: "_id", Value: bson.D{{Key: "$gt", Value: after.ID}}}},
+				}}},
+			}},
+		}
+	}
+	cur, err := mintColl().Find(ctx, filter,
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -88,4 +108,14 @@ func (MintStore) ListOpenBefore(ctx context.Context, cutoff time.Time, limit int
 		return nil, err
 	}
 	return out, nil
+}
+
+// FindOpen returns the open mint with id, and whether there is one.
+func (MintStore) FindOpen(ctx context.Context, id string) (SessionMint, bool, error) {
+	var m SessionMint
+	err := mintColl().FindOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "closed_at", Value: nil}}).Decode(&m)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return m, false, nil
+	}
+	return m, err == nil, err
 }

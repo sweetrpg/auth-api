@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -95,7 +96,8 @@ type mintStore interface {
 	Insert(ctx context.Context, m models.SessionMint) error
 	CountOpen(ctx context.Context, userID string) (int64, error)
 	Close(ctx context.Context, id, actor string, now time.Time) (bool, error)
-	ListOpenBefore(ctx context.Context, cutoff time.Time, limit int64) ([]models.SessionMint, error)
+	ListOpenBefore(ctx context.Context, cutoff time.Time, after *models.MintCursor, limit int64) ([]models.SessionMint, error)
+	FindOpen(ctx context.Context, id string) (models.SessionMint, bool, error)
 }
 
 // rateChecker is the Redis-backed limiter; an error means the counter store is unavailable and the
@@ -268,7 +270,7 @@ func (h sessionHandlers) end(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, authzErrorResponse{Error: authzUnavailable})
 		return
 	}
-	if !allowed {
+	if !allowed && !h.ownsEmptyOpenMint(c.Request.Context(), caller.UserID, id, object) {
 		c.JSON(http.StatusForbidden, authzErrorResponse{Error: "forbidden"})
 		return
 	}
@@ -277,6 +279,18 @@ func (h sessionHandlers) end(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// ownsEmptyOpenMint reports whether the session has no tuples left and the caller has its mint
+// still open: a retry of an end whose tuples were deleted but whose mint close failed. Closing it
+// again is safe because nothing is left to grant. Any error or other state answers false (403).
+func (h sessionHandlers) ownsEmptyOpenMint(ctx context.Context, userID, id, object string) bool {
+	left, _, err := h.store.Read(ctx, object, 1, "")
+	if err != nil || len(left) > 0 {
+		return false
+	}
+	mint, open, err := h.mints.FindOpen(ctx, id)
+	return err == nil && open && mint.UserID == userID
 }
 
 // removeSession is the audited removal of a session's tuples and its mint, shared by the GM's end
@@ -316,21 +330,47 @@ func deleteAllTuples(ctx context.Context, store fga.Store, object string) error 
 	return errors.New("session still has tuples after the delete rounds")
 }
 
-// countTuples counts the tuples on object, stopping once it passes limit.
-func countTuples(ctx context.Context, store fga.Store, object string, limit int) (int, error) {
-	total, token := 0, ""
-	for total <= limit {
+// readTuples returns the tuples on object, stopping once it has more than limit (enough to know
+// the session is full).
+func readTuples(ctx context.Context, store fga.Store, object string, limit int) ([]fga.Tuple, error) {
+	var all []fga.Tuple
+	token := ""
+	for len(all) <= limit {
 		page, next, err := store.Read(ctx, object, maxTuplePage, token)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		total += len(page)
+		all = append(all, page...)
 		if next == "" {
 			break
 		}
 		token = next
 	}
-	return total, nil
+	return all, nil
+}
+
+// netTuples is how many tuples the session has after the change: the current set plus the writes
+// not already present, minus the deletes that are present. OpenFGA ignores a duplicate write and a
+// missing delete, so counting them would let a caller pad deletes to slip writes past the cap.
+func netTuples(current, writes, deletes []fga.Tuple) int {
+	have := make(map[fga.Tuple]bool, len(current))
+	for _, t := range current {
+		have[t] = true
+	}
+	n := len(current)
+	for _, t := range writes {
+		if !have[t] {
+			have[t] = true
+			n++
+		}
+	}
+	for _, t := range deletes {
+		if have[t] {
+			delete(have, t)
+			n--
+		}
+	}
+	return n
 }
 
 type sessionTuple struct {
@@ -412,12 +452,12 @@ func (h sessionHandlers) writeSessionTuples(c *gin.Context) {
 	}
 	writes, deletes := objectTuples(object, req.Writes), objectTuples(object, req.Deletes)
 	if len(writes) > 0 {
-		current, err := countTuples(ctx, h.store, object, h.limits.MaxSessionTuples)
+		current, err := readTuples(ctx, h.store, object, h.limits.MaxSessionTuples+maxSessionTupleBatch)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, authzErrorResponse{Error: authzUnavailable})
 			return
 		}
-		if current+len(writes)-len(deletes) > h.limits.MaxSessionTuples {
+		if netTuples(current, writes, deletes) > h.limits.MaxSessionTuples {
 			c.JSON(http.StatusConflict, authzErrorResponse{Error: "session_full"})
 			return
 		}
@@ -438,9 +478,10 @@ func (h sessionHandlers) writeSessionTuples(c *gin.Context) {
 }
 
 // listMints returns open mints at least min_age old by auth-api's own clock, for the reconciler's
-// garbage collection. It requires openfga-writer.
+// garbage collection, ordered by (created_at, id) and paged: `after` is the `next` value of the
+// previous page, and `next` is set only when more remain. It requires openfga-writer.
 func (h sessionHandlers) listMints(c *gin.Context) {
-	if _, ok := h.requireWriter(c); !ok {
+	if _, ok := h.requireWriterStatus(c, http.StatusServiceUnavailable, authzUnavailable); !ok {
 		return
 	}
 	age, err := time.ParseDuration(c.Query("min_age"))
@@ -457,22 +498,50 @@ func (h sessionHandlers) listMints(c *gin.Context) {
 		}
 		limit = int64(n)
 	}
-	mints, err := h.mints.ListOpenBefore(c.Request.Context(), nowFunc().Add(-age), limit)
+	after, ok := parseMintCursor(c.Query("after"))
+	if !ok {
+		c.JSON(http.StatusBadRequest, authzErrorResponse{Error: "invalid_request"})
+		return
+	}
+	mints, err := h.mints.ListOpenBefore(c.Request.Context(), nowFunc().Add(-age), after, limit+1)
 	if err != nil {
 		logging.Logger.Error("Mint list failed", "error", err.Error())
 		c.JSON(http.StatusServiceUnavailable, authzErrorResponse{Error: authzUnavailable})
 		return
 	}
+	next := ""
+	if int64(len(mints)) > limit {
+		mints = mints[:limit]
+		next = formatMintCursor(mints[len(mints)-1])
+	}
 	if mints == nil {
 		mints = []models.SessionMint{}
 	}
-	c.JSON(http.StatusOK, gin.H{"mints": mints})
+	c.JSON(http.StatusOK, gin.H{"mints": mints, "next": next})
+}
+
+// formatMintCursor encodes the position after m as "<unix nanos>.<id>".
+func formatMintCursor(m models.SessionMint) string {
+	return strconv.FormatInt(m.CreatedAt.UnixNano(), 10) + "." + m.ID
+}
+
+// parseMintCursor decodes a cursor; an empty one means the start. ok is false for a malformed one.
+func parseMintCursor(raw string) (*models.MintCursor, bool) {
+	if raw == "" {
+		return nil, true
+	}
+	nanos, id, found := strings.Cut(raw, ".")
+	n, err := strconv.ParseInt(nanos, 10, 64)
+	if !found || err != nil || !sessionIDPattern.MatchString(id) {
+		return nil, false
+	}
+	return &models.MintCursor{CreatedAt: time.Unix(0, n).UTC(), ID: id}, true
 }
 
 // closeMint deletes every tuple on a minted session and closes its mint. The reconciler calls it
 // for a mint whose session Mongo does not have (or has deleted). It requires openfga-writer.
 func (h sessionHandlers) closeMint(c *gin.Context) {
-	subject, ok := h.requireWriter(c)
+	subject, ok := h.requireWriterStatus(c, http.StatusServiceUnavailable, authzUnavailable)
 	if !ok {
 		return
 	}

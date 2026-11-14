@@ -195,8 +195,10 @@ necessary but not sufficient: `initiative-api` also requires a live Mongo member
   `co_gm`/`player`/`observer` only, object always `session:<id>`. Caller needs `can_view` to delete
   only their own tuple, `gm` for any `co_gm` tuple, `can_edit` otherwise. At most
   `MAX_SESSION_TUPLES` (200) tuples per session.
-- `GET /internal/openfga/session-mints?min_age=15m` and `POST /internal/openfga/session-mints/{id}/close`
-  require `openfga-writer` (the reconciler's garbage collection). Closed mints are removed by a TTL
+- `GET /internal/openfga/session-mints?min_age=15m[&after=<next>][&limit=n]` (returns `{mints, next}`,
+  ordered by created_at then id; `next` is empty on the last page) and
+  `POST /internal/openfga/session-mints/{id}/close` require `openfga-writer` (the reconciler's
+  garbage collection). Closed mints are removed by a TTL
   index 30 days after `closed_at`.
 - Every write is audited before it runs. Rate limits use Redis; with Redis down the endpoints answer
   503 rather than run unlimited.
