@@ -48,4 +48,10 @@ const (
 	// AdminActionAuditLogCollection is the MongoDB collection name for
 	// write-route audit records.
 	AdminActionAuditLogCollection = "admin_action_audit_logs"
+
+	// SessionMintsCollection records session IDs this service minted (PADR-0040).
+	SessionMintsCollection = "session_mints"
+
+	// InitiativeService is the service name a deny entry for Initiative! carries (registry id).
+	InitiativeService = "initiative-api"
 )
