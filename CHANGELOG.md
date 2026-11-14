@@ -1,3 +1,12 @@
+## [0.13.1] - 2026-11-14
+
+### 🐛 Bug Fixes
+
+- *(kubernetes)* Keep auth-api labels off the openfga pod so api-v1 stops routing to it
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.13.0
 ## [0.13.0] - 2026-11-14
 
 ### 🚀 Features

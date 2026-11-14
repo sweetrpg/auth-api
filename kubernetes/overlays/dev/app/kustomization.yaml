@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Everything labeled as the auth-api workload. OpenFGA lives one level up, outside this layer: these
+# labels reach pod templates, and a pod carrying them would match the api-v1 Service selector.
+resources:
+    - ../../../base
+    - atlas-db-user.yaml
+    - configmaps.yaml
+    - nats.yaml
+    - pod-monitor.yaml
+    - secrets/cache.yaml
+    - secrets/db-creds.yaml
+    - secrets/db.yaml
+    - secrets/misc.yaml
+
+labels:
+    - pairs:
+          app.kubernetes.io/name: auth-api
+          app.kubernetes.io/version: v1
+          app.kubernetes.io/component: api
+          app.kubernetes.io/part-of: auth
+          com.sweetrpg/env: dev
+      includeSelectors: false
+      includeTemplates: true
