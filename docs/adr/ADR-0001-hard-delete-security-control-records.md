@@ -25,7 +25,7 @@ keeps access.
 
 `auth-api` persists exactly that class:
 
-- `user_roles` — one row per role assignment beyond the default `user` role. `RemoveRole`
+- `user_roles` — one row per role assignment beyond the default `user` role (`/authz/check` also returns `user` for an admin). `RemoveRole`
   revokes a role.
 - `service_deny_entries` — an explicit deny of one subject's access to one service.
   `RemoveDenyEntry` lifts the deny.

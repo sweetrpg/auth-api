@@ -10,8 +10,8 @@ import (
 )
 
 // UserRole is a single role assignment. A subject with no rows here defaults
-// to RoleUser (see design.md's "Role model" decision) - this collection only
-// holds assignments beyond that default. Keyed on the Auth0 subject directly
+// to RoleUser (see design.md's "Role model" decision), and /authz/check adds
+// RoleUser to an admin - this collection only holds assignments beyond that. Keyed on the Auth0 subject directly
 // rather than a foreign key into users-api's User collection - auth-api holds
 // no profile data of its own to relate to.
 type UserRole struct {
