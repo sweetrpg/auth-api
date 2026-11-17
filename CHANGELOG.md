@@ -1,3 +1,12 @@
+## [0.15.1] - 2026-11-17
+
+### 🐛 Bug Fixes
+
+- *(authz)* An admin also gets the user role from /authz/check
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.15.0
 ## [0.15.0] - 2026-11-14
 
 ### 🚀 Features
