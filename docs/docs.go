@@ -489,7 +489,7 @@ const docTemplate = `{
         },
         "/authz/check": {
             "post": {
-                "description": "Authorize a service request",
+                "description": "Authorize a service request. Roles: user when the subject has no role rows; admin implies user; no other role implies user.",
                 "consumes": [
                     "application/json"
                 ],
