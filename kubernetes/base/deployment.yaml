@@ -28,6 +28,10 @@ spec:
         spec:
             serviceAccountName: api
             enableServiceLinks: false
+            dnsConfig:
+              options:
+                - name: ndots
+                  value: "2"
             imagePullSecrets:
                 - name: sweetrpg-registry
             containers:
