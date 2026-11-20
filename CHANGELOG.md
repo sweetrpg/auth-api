@@ -1,3 +1,12 @@
+## [0.15.2] - 2026-11-20
+
+### 🐛 Bug Fixes
+
+- *(k8s)* Set ndots 2 on API pods
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Merge master into develop after v0.15.1
 ## [0.15.1] - 2026-11-17
 
 ### 🐛 Bug Fixes
