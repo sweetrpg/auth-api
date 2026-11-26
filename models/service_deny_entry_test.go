@@ -14,12 +14,12 @@ import (
 )
 
 // TestMain connects to the DB_URI-configured MongoDB (a CI service container, see
-// .github/workflows/{ci,pr}.yaml). DB-backed tests skip entirely without DB_URI so a local
-// `go test ./...` still passes offline.
+// .github/workflows/{ci,pr}.yaml). Without DB_URI the package fails, so a run can't pass
+// having tested nothing.
 func TestMain(m *testing.M) {
 	if os.Getenv("DB_URI") == "" {
-		fmt.Println("DB_URI not set, skipping auth-api models DB-backed tests")
-		os.Exit(0)
+		fmt.Println("DB_URI is unset: these tests need a MongoDB, e.g. DB_URI=mongodb://localhost:27017/unit-tests")
+		os.Exit(1)
 	}
 	logging.Init()
 	database.SetupDatabase()
