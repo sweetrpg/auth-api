@@ -43,3 +43,9 @@ logged if dropped; it never fails the admin request. Set `NATS_URL` (and `NATS_C
 ```bash
 go test ./...
 ```
+
+The `models` tests need a MongoDB and fail without one:
+
+```bash
+DB_URI=mongodb://localhost:27017/unit-tests go test ./...
+```
